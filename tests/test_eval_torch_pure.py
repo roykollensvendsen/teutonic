@@ -1,8 +1,14 @@
 import io
+import math
 
 import numpy as np
 
-from eval_torch import _classify_param, _parse_npy_header, _seed_for_iteration
+from eval_torch import (
+    _build_probe_verdict,
+    _classify_param,
+    _parse_npy_header,
+    _seed_for_iteration,
+)
 
 # _parse_npy_header(raw: bytes) -> int
 # Docstring: "Return the byte offset where data begins in a .npy file."
@@ -114,3 +120,61 @@ def test_seed_for_iteration_distinct_indices_yield_distinct_seeds():
     # explicitly named "per-seed-index").
     seeds = {_seed_for_iteration(i) for i in range(20)}
     assert len(seeds) == 20
+
+
+# _build_probe_verdict — keyword-only constructor that wraps probe
+# results into the dict shape every caller expects. Aggregates over
+# `per_seed` and emits both new diagnostic fields and legacy fields per
+# the docstring.
+
+def _verdict(**overrides):
+    """Build a verdict with sensible defaults; overrides win."""
+    defaults = {
+        "ok": True, "reason": "", "status": "ok",
+        "max_norm_weight": 0.0, "per_seed": [],
+        "norm_quant": None, "warnings": [],
+    }
+    defaults.update(overrides)
+    return _build_probe_verdict(**defaults)
+
+
+def test_build_probe_verdict_returns_dict():
+    assert isinstance(_verdict(), dict)
+
+
+def test_build_probe_verdict_passes_through_ok_reason_status():
+    v = _verdict(ok=False, reason="anti_finetune detected", status="anti_finetune")
+    assert v["ok"] is False
+    assert v["reason"] == "anti_finetune detected"
+    assert v["status"] == "anti_finetune"
+
+
+def test_build_probe_verdict_empty_per_seed_aggregates_to_nan():
+    v = _verdict(per_seed=[])
+    # Legacy aggregate fields default to NaN when there's nothing to
+    # aggregate over.
+    for field in ("loss_before", "max_loss_after", "min_loss_before"):
+        assert math.isnan(v[field]), f"expected NaN for {field}, got {v[field]}"
+
+
+def test_build_probe_verdict_aggregates_min_loss_before_and_max_loss_after():
+    per_seed = [
+        {"loss": 1.5, "global_grad_norm": 0.5},
+        {"loss": 2.5, "global_grad_norm": 1.0},
+        {"loss": 0.8, "global_grad_norm": 2.0},
+    ]
+    v = _verdict(per_seed=per_seed)
+    assert v["min_loss_before"] == 0.8
+    assert v["max_loss_after"] == 2.5
+
+
+def test_build_probe_verdict_includes_all_documented_fields():
+    v = _verdict()
+    # Both the "new" and "legacy" field families promised by the docstring.
+    expected = {
+        "status", "max_norm_weight",
+        "loss_before", "max_grad_norm", "min_loss_before", "max_loss_after",
+        "n_seeds", "n_steps_per_seed",
+    }
+    missing = expected - set(v.keys())
+    assert not missing, f"missing fields in verdict dict: {missing}"
