@@ -584,16 +584,6 @@ def _rank_sort_key(entry: dict):
     )
 
 
-def _normalize_weights(base_weights, n):
-    weights = list(base_weights[:n])
-    if not weights:
-        return []
-    total = sum(weights)
-    if total <= 0:
-        return []
-    return [w / total for w in weights]
-
-
 def set_weights(subtensor, wallet, netuid, ranked_hotkeys, ranked_weights) -> bool:
     """Set weights across one or more ranked hotkeys. Returns True on success.
 
