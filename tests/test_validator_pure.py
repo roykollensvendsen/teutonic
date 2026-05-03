@@ -1,6 +1,7 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 
-from validator import _age_seconds, _rank_sort_key
+from validator import _age_seconds, _is_transient_eval_error, _rank_sort_key
 
 
 def _entry(**fields):
@@ -91,3 +92,55 @@ def test_age_seconds_future_timestamp_clamps_to_zero():
     # Spec was ambiguous; impl clamps future timestamps to 0.0 (max(0, ...)).
     ts = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
     assert _age_seconds(ts) == 0.0
+
+
+# _is_transient_eval_error — classify exceptions/error messages as
+# retry-able (transient) vs permanent. Returns (is_transient, reason_str).
+# Markers known from commit history: CancelledError (162345d),
+# SSE-truncation (a1bc502), streamconsumed/closed/error (8b2e2bd).
+
+def test_is_transient_returns_tuple_of_bool_and_str():
+    is_transient, reason = _is_transient_eval_error(Exception("anything"))
+    assert isinstance(is_transient, bool)
+    assert isinstance(reason, str)
+
+
+def test_is_transient_for_cancelled_error():
+    is_transient, _reason = _is_transient_eval_error(asyncio.CancelledError())
+    assert is_transient is True
+
+
+def test_is_transient_for_streamconsumed_message():
+    is_transient, _reason = _is_transient_eval_error(Exception("StreamConsumed"))
+    assert is_transient is True
+
+
+def test_is_transient_for_streamclosed_message():
+    is_transient, _reason = _is_transient_eval_error(Exception("StreamClosed"))
+    assert is_transient is True
+
+
+def test_is_transient_for_streamerror_message():
+    is_transient, _reason = _is_transient_eval_error(Exception("StreamError"))
+    assert is_transient is True
+
+
+def test_is_not_transient_for_value_error():
+    is_transient, _reason = _is_transient_eval_error(ValueError("bad arg"))
+    assert is_transient is False
+
+
+def test_is_not_transient_for_assertion_error():
+    is_transient, _reason = _is_transient_eval_error(AssertionError("nope"))
+    assert is_transient is False
+
+
+def test_is_transient_accepts_string_input():
+    # Sig is Exception | str — passing a raw string should also classify.
+    is_transient, _reason = _is_transient_eval_error("StreamConsumed")
+    assert is_transient is True
+
+
+def test_is_not_transient_for_unrelated_string():
+    is_transient, _reason = _is_transient_eval_error("unrelated message")
+    assert is_transient is False
