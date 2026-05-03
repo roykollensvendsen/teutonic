@@ -55,6 +55,18 @@ def test_validate_local_config_matching_returns_none(king_chall_dirs):
     assert validate_local_config(str(king), str(chall)) is None
 
 
+def test_validate_local_config_accepts_sharded_safetensors(king_chall_dirs):
+    # Real-world models are often sharded into model-00001-of-N.safetensors.
+    # Multiple safetensors must be accepted, not just a single file.
+    king, chall = king_chall_dirs
+    _write_config(king, **_matching_fields())
+    _write_config(chall, **_matching_fields())
+    _write_safetensors(chall, name="model-00001-of-00002.safetensors")
+    _write_safetensors(chall, name="model-00002-of-00002.safetensors")
+
+    assert validate_local_config(str(king), str(chall)) is None
+
+
 def test_validate_local_config_missing_king_returns_none(king_chall_dirs):
     # Per docstring: can't validate without king config — returns None
     # so miner doesn't refuse to publish before the king is set up.
@@ -157,6 +169,17 @@ def test_sha256_dir_ignores_non_safetensors_files(tmp_path):
     digest_after = sha256_dir(str(tmp_path))
 
     assert digest_before == digest_after
+
+
+def test_sha256_dir_empty_directory_returns_empty_hash(tmp_path):
+    # Edge case: directory exists but no .safetensors files. Real
+    # scenario: state cleared but dir not removed. Should return the
+    # hex digest of an empty hashlib.sha256() (no data fed).
+    import hashlib
+
+    digest = sha256_dir(str(tmp_path))
+
+    assert digest == hashlib.sha256().hexdigest()
 
 
 def test_sha256_dir_combines_multiple_safetensors_in_sorted_order(tmp_path):
