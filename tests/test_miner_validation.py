@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from miner import validate_local_config
+from miner import sha256_dir, validate_local_config
 
 
 def _write_config(d, **fields):
@@ -117,3 +117,61 @@ def test_validate_local_config_python_file_rejects(king_chall_dirs):
     rejection = validate_local_config(str(king), str(chall))
     assert isinstance(rejection, str)
     assert ".py" in rejection.lower() or "python" in rejection.lower()
+
+
+# sha256_dir(path) — content hash of all *.safetensors files in `path`,
+# read in sorted order. Used by miners to commit a hash on-chain
+# matching what the validator computes for the king.
+
+def test_sha256_dir_returns_64_char_hex(tmp_path):
+    (tmp_path / "model.safetensors").write_bytes(b"weights")
+
+    digest = sha256_dir(str(tmp_path))
+
+    assert isinstance(digest, str)
+    assert len(digest) == 64
+    assert all(c in "0123456789abcdef" for c in digest)
+
+
+def test_sha256_dir_is_deterministic(tmp_path):
+    (tmp_path / "model.safetensors").write_bytes(b"weights")
+    assert sha256_dir(str(tmp_path)) == sha256_dir(str(tmp_path))
+
+
+def test_sha256_dir_distinct_content_yields_distinct_hash(tmp_path):
+    (tmp_path / "model.safetensors").write_bytes(b"weights-A")
+    digest_a = sha256_dir(str(tmp_path))
+    (tmp_path / "model.safetensors").write_bytes(b"weights-B")
+    digest_b = sha256_dir(str(tmp_path))
+    assert digest_a != digest_b
+
+
+def test_sha256_dir_ignores_non_safetensors_files(tmp_path):
+    # README, config.json, etc. should not affect the hash — only
+    # .safetensors content matters.
+    (tmp_path / "model.safetensors").write_bytes(b"weights")
+    digest_before = sha256_dir(str(tmp_path))
+
+    (tmp_path / "README.md").write_text("docs")
+    (tmp_path / "config.json").write_text('{"x": 1}')
+    digest_after = sha256_dir(str(tmp_path))
+
+    assert digest_before == digest_after
+
+
+def test_sha256_dir_combines_multiple_safetensors_in_sorted_order(tmp_path):
+    # The miner and validator must agree on hash regardless of
+    # filesystem ordering, so the impl sorts. Two equivalent dirs
+    # built in different orders should produce the same hash.
+    src1 = tmp_path / "src1"
+    src2 = tmp_path / "src2"
+    src1.mkdir()
+    src2.mkdir()
+    # src1: write a then b
+    (src1 / "a.safetensors").write_bytes(b"chunk-A")
+    (src1 / "b.safetensors").write_bytes(b"chunk-B")
+    # src2: write b then a
+    (src2 / "b.safetensors").write_bytes(b"chunk-B")
+    (src2 / "a.safetensors").write_bytes(b"chunk-A")
+
+    assert sha256_dir(str(src1)) == sha256_dir(str(src2))
