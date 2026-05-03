@@ -2,7 +2,7 @@ import io
 
 import numpy as np
 
-from eval_torch import _classify_param, _parse_npy_header
+from eval_torch import _classify_param, _parse_npy_header, _seed_for_iteration
 
 # _parse_npy_header(raw: bytes) -> int
 # Docstring: "Return the byte offset where data begins in a .npy file."
@@ -94,3 +94,23 @@ def test_classify_param_mlp_gate_proj():
 
 def test_classify_param_unknown_falls_to_other():
     assert _classify_param("some_random_unrecognized_param") == "other"
+
+
+# _seed_for_iteration — derive a deterministic PRNG seed from the
+# iteration index. Docstring: "Stable per-seed-index PRNG seed derived
+# from PROBE_SEED."
+
+def test_seed_for_iteration_returns_int():
+    assert isinstance(_seed_for_iteration(0), int)
+
+
+def test_seed_for_iteration_is_deterministic():
+    assert _seed_for_iteration(7) == _seed_for_iteration(7)
+    assert _seed_for_iteration(42) == _seed_for_iteration(42)
+
+
+def test_seed_for_iteration_distinct_indices_yield_distinct_seeds():
+    # Across a small range, no collisions expected (the function is
+    # explicitly named "per-seed-index").
+    seeds = {_seed_for_iteration(i) for i in range(20)}
+    assert len(seeds) == 20
