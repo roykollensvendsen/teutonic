@@ -10,7 +10,7 @@ Used by experiment scripts to re-score the same losses under different
 """
 import numpy as np
 
-from eval_penalized import penalize, score_from_diffs
+from eval_penalized import penalize, score_bootstrap_from_diffs, score_from_diffs
 
 # `penalize(d, beta)` — docstring: "Apply asymmetric regression penalty
 # to paired differences. d: d_i = king_loss_i - challenger_loss_i
@@ -107,15 +107,70 @@ def test_score_from_diffs_strongly_negative_rejected():
     assert verdict["accepted"] is False or verdict["accepted"] == np.False_
 
 
-def test_score_from_diffs_higher_beta_makes_acceptance_harder():
-    # Marginal challenger (small positive mean with regressions mixed in).
-    # Higher beta amplifies the regressions, so a barely-passing diff
-    # may flip from accepted to rejected.
+def test_score_from_diffs_beta_affects_output():
+    # Sanity: beta must actually be used by the function. With diffs
+    # that contain regressions (negatives), beta=0 vs beta=large MUST
+    # produce different verdict dicts — otherwise beta is being ignored.
     rng = np.random.default_rng(1)
-    d = rng.normal(loc=0.02, scale=0.1, size=200)  # marginal
+    d = rng.normal(loc=0.02, scale=0.2, size=200)  # has both signs
+
     no_penalty = score_from_diffs(d, alpha=0.05, delta=0.005, beta=0.0)
     heavy_penalty = score_from_diffs(d, alpha=0.05, delta=0.005, beta=10.0)
-    # Heavy penalty must be at least as strict as no penalty:
-    # if no_penalty rejects, heavy_penalty must also reject.
-    if not no_penalty["accepted"]:
-        assert not heavy_penalty["accepted"]
+
+    assert no_penalty != heavy_penalty, "beta parameter appears to be ignored"
+
+
+# `score_bootstrap_from_diffs(d, alpha, delta, n_bootstrap=10000, seed=42)`
+# — docstring: "Re-run the original bootstrap test on precomputed diffs."
+# Used to compare against the production verdict on the same diffs.
+# Returns a dict (call site reads verdict["accepted"]).
+
+def test_score_bootstrap_returns_dict_with_accepted():
+    rng = np.random.default_rng(0)
+    d = rng.normal(loc=0.5, scale=0.05, size=100)
+    verdict = score_bootstrap_from_diffs(d, alpha=0.05, delta=0.01,
+                                         n_bootstrap=200, seed=1)
+    assert isinstance(verdict, dict)
+    assert "accepted" in verdict
+
+
+def test_score_bootstrap_is_deterministic_for_same_seed():
+    rng = np.random.default_rng(0)
+    d = rng.normal(loc=0.05, scale=0.1, size=100)
+    a = score_bootstrap_from_diffs(d, alpha=0.05, delta=0.01,
+                                   n_bootstrap=500, seed=42)
+    b = score_bootstrap_from_diffs(d, alpha=0.05, delta=0.01,
+                                   n_bootstrap=500, seed=42)
+    assert a == b
+
+
+def test_score_bootstrap_different_seeds_produce_different_internals():
+    # Verdict may agree for clear cases, but the bootstrap resampling
+    # itself uses the seed — internal stats (mu_hat, lcb, etc.) should
+    # differ between seeds for marginal data.
+    rng = np.random.default_rng(0)
+    d = rng.normal(loc=0.02, scale=0.1, size=200)  # marginal
+    a = score_bootstrap_from_diffs(d, alpha=0.05, delta=0.005,
+                                   n_bootstrap=500, seed=1)
+    b = score_bootstrap_from_diffs(d, alpha=0.05, delta=0.005,
+                                   n_bootstrap=500, seed=2)
+    # At least one numeric field should differ — distinct seeds drive
+    # distinct resamples.
+    differing_keys = [k for k in a if a.get(k) != b.get(k)]
+    assert differing_keys, f"expected some difference between seeds, got {a} == {b}"
+
+
+def test_score_bootstrap_strongly_positive_accepted():
+    rng = np.random.default_rng(0)
+    d = rng.normal(loc=0.5, scale=0.05, size=100)
+    verdict = score_bootstrap_from_diffs(d, alpha=0.05, delta=0.01,
+                                         n_bootstrap=500, seed=1)
+    assert verdict["accepted"] is True or verdict["accepted"] == np.True_
+
+
+def test_score_bootstrap_strongly_negative_rejected():
+    rng = np.random.default_rng(0)
+    d = rng.normal(loc=-0.5, scale=0.05, size=100)
+    verdict = score_bootstrap_from_diffs(d, alpha=0.05, delta=0.01,
+                                         n_bootstrap=500, seed=1)
+    assert verdict["accepted"] is False or verdict["accepted"] == np.False_
