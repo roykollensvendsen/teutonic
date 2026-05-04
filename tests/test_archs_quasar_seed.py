@@ -1,15 +1,21 @@
-"""Tests for archs.quasar.seed.build_config.
+"""Tests for archs.quasar.seed pure helpers.
 
-`build_config()` is the seed-time QuasarConfig factory. Unlike the
-sizing-script `archs.quasar.size.build_config(args)`, it takes no
-arguments — every field is read from module-level constants that
-themselves snapshot `TEUTONIC_SEED_*` env vars at import time.
+* `build_config()` — seed-time QuasarConfig factory. Takes no args;
+  every field is read from module-level constants that themselves
+  snapshot `TEUTONIC_SEED_*` env vars at import time. The build_config
+  tests monkeypatch the module-level constants directly (rather than
+  mutating env + reloading) so each case isolates a single field
+  without paying the import cost of torch + transformers + chain_config
+  on every parameterization.
 
-The tests monkeypatch the module-level constants directly (rather
-than mutating env + reloading) so each case isolates a single field
-without paying the import cost of torch + transformers + chain_config
-on every parameterization.
+* `_strip_auto_map(out_dir)` — mutates `config.json` on disk to drop
+  the `auto_map` field. The vendored archs/quasar package handles
+  loading via plain AutoModelForCausalLM dispatch once imported, so
+  `auto_map` would only cause HF to attempt a dynamic import of the
+  original silx-ai modules. Tested with a tmp_path-built config.json.
 """
+import json
+
 from archs.quasar import seed
 
 
@@ -64,3 +70,80 @@ def test_build_config_sets_architectures_attribute():
     # trust_remote_code on consumer load.
     cfg = seed.build_config()
     assert cfg.architectures == ["QuasarForCausalLM"]
+
+
+# ---------------------------------------------------------------------
+# _strip_auto_map — mutate config.json on disk to drop auto_map field.
+
+def _write_config(tmp_path, payload):
+    """Helper: write a config.json into tmp_path and return the dir."""
+    (tmp_path / "config.json").write_text(json.dumps(payload, indent=2))
+    return tmp_path
+
+
+def test_strip_auto_map_removes_field(tmp_path):
+    out_dir = _write_config(tmp_path, {
+        "model_type": "quasar",
+        "auto_map": {"AutoConfig": "configuration_quasar.QuasarConfig"},
+        "d_model": 4096,
+    })
+    seed._strip_auto_map(out_dir)
+    after = json.loads((out_dir / "config.json").read_text())
+    assert "auto_map" not in after
+
+
+def test_strip_auto_map_is_noop_when_field_absent(tmp_path):
+    payload = {"model_type": "quasar", "d_model": 4096}
+    out_dir = _write_config(tmp_path, payload)
+    seed._strip_auto_map(out_dir)
+    after = json.loads((out_dir / "config.json").read_text())
+    assert after == payload
+
+
+def test_strip_auto_map_preserves_other_fields(tmp_path):
+    out_dir = _write_config(tmp_path, {
+        "model_type": "quasar",
+        "auto_map": {"AutoConfig": "configuration_quasar.QuasarConfig"},
+        "d_model": 4096,
+        "n_layers": 32,
+        "architectures": ["QuasarForCausalLM"],
+        "torch_dtype": "bfloat16",
+    })
+    seed._strip_auto_map(out_dir)
+    after = json.loads((out_dir / "config.json").read_text())
+    assert after == {
+        "model_type": "quasar",
+        "d_model": 4096,
+        "n_layers": 32,
+        "architectures": ["QuasarForCausalLM"],
+        "torch_dtype": "bfloat16",
+    }
+
+
+def test_strip_auto_map_is_idempotent(tmp_path):
+    # Running twice on the same file must not corrupt it — second call
+    # is the no-op-when-absent case.
+    out_dir = _write_config(tmp_path, {
+        "model_type": "quasar",
+        "auto_map": {"AutoConfig": "x"},
+    })
+    seed._strip_auto_map(out_dir)
+    seed._strip_auto_map(out_dir)
+    after = json.loads((out_dir / "config.json").read_text())
+    assert after == {"model_type": "quasar"}
+
+
+def test_strip_auto_map_writes_valid_json(tmp_path):
+    # The output must round-trip through json.load — pin the indent=2
+    # contract so the on-disk file stays human-diffable when the seed
+    # script later re-uploads it.
+    out_dir = _write_config(tmp_path, {
+        "model_type": "quasar",
+        "auto_map": {"AutoConfig": "x"},
+        "n_layers": 8,
+    })
+    seed._strip_auto_map(out_dir)
+    text = (out_dir / "config.json").read_text()
+    # indent=2 → newline + 2-space prefix on first key.
+    assert "\n  " in text
+    assert json.loads(text) == {"model_type": "quasar", "n_layers": 8}
