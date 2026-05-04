@@ -63,10 +63,12 @@ def test_caches_by_repo_and_revision(fake_hf, mocker):
     assert api_factory.call_count <= 1
 
 
-def test_returns_empty_dict_on_fetch_error(fake_hf):
+def test_returns_falsy_on_fetch_error(fake_hf):
     # No fake state registered — hf_hub_download raises FileNotFoundError.
+    # The contract caller relies on is `if not king_cfg: return None`
+    # in validate_challenger_config — falsy, not specifically `{}`.
     cfg = get_king_config("unconst/missing", "rev1")
-    assert cfg == {}
+    assert not cfg
 
 
 def test_cache_invalidates_on_revision_change(fake_hf):
