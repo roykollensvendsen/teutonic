@@ -30,8 +30,8 @@ def r2_mock(mocker):
 def test_flush_dashboard_first_call_succeeds(r2_mock):
     s = State(r2_mock)
     result = s.flush_dashboard()
-    # First call (no _last_dashboard_flush_monotonic set) — should run.
-    assert result is not False  # may return None, True, etc.
+    # First call (no prior flush) — should run, not be skipped.
+    assert result is not False
 
 
 def test_flush_dashboard_immediate_second_call_returns_false(r2_mock):
@@ -57,6 +57,8 @@ def test_flush_dashboard_calls_put_dashboard_on_r2(r2_mock):
     s = State(r2_mock)
     s.flush_dashboard()
     r2_mock.put_dashboard.assert_called()
+    # And the captured payload must be non-empty (something was actually written).
+    assert r2_mock._dashboards
 
 
 def test_flush_dashboard_updates_watchdog_timestamp(r2_mock):
