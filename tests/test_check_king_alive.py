@@ -15,7 +15,7 @@ the reverted king.
 """
 import pytest
 
-from validator import check_king_alive
+from validator import State, check_king_alive
 
 
 @pytest.fixture
@@ -28,7 +28,6 @@ def r2_mock(mocker):
     r2.put.side_effect = lambda key, data: storage.update({key: data})
     r2.append_jsonl.side_effect = lambda key, rec: appended.setdefault(key, []).append(rec)
     r2.put_dashboard.side_effect = lambda key, data: dashboards.update({key: data})
-    r2._storage = storage
     r2._appended = appended
     return r2
 
@@ -43,7 +42,6 @@ def fake_hf(mocker):
 
 @pytest.fixture
 def state(r2_mock):
-    from validator import State
     return State(r2_mock)
 
 
