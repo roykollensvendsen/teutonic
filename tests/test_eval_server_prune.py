@@ -17,7 +17,22 @@ Active records (state != completed/failed) are never pruned.
 """
 import time
 
+import pytest
+
 import eval_server
+
+
+@pytest.fixture(autouse=True)
+def _isolate_evals_dict():
+    """Each test gets a fresh `_evals` dict; restore on teardown.
+
+    Without this, a test's seed pollutes the module-level dict for any
+    later test that reads `eval_server._evals`.
+    """
+    saved = eval_server._evals
+    eval_server._evals = {}
+    yield
+    eval_server._evals = saved
 
 
 def _eval(state, *, age_s=0.0):
