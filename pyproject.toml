@@ -22,13 +22,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["ruff"]
+test = ["pytest>=8.0", "pytest-mock>=3.14"]
 
 [project.urls]
 Homepage = "https://teutonic.ai"
 Repository = "https://github.com/unarbos/teutonic"
-
-[project.optional-dependencies]
-test = ["pytest>=8.0", "pytest-mock>=3.14"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
