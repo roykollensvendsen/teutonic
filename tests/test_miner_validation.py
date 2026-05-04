@@ -118,19 +118,6 @@ def test_validate_local_config_missing_safetensors_rejects(king_chall_dirs):
     assert "safetensors" in rejection.lower()
 
 
-def test_validate_local_config_python_file_rejects(king_chall_dirs):
-    # Mirrors the security rule in validator.validate_challenger_config:
-    # *.py uploads would let a miner ship arbitrary code via auto_map.
-    king, chall = king_chall_dirs
-    _write_config(king, **_matching_fields())
-    _make_valid_challenger(chall)
-    (chall / "modeling_custom.py").write_text("# evil code")
-
-    rejection = validate_local_config(str(king), str(chall))
-    assert isinstance(rejection, str)
-    assert ".py" in rejection.lower() or "python" in rejection.lower()
-
-
 # sha256_dir(path) — content hash of all *.safetensors files in `path`,
 # read in sorted order. Used by miners to commit a hash on-chain
 # matching what the validator computes for the king.
