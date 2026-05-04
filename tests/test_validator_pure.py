@@ -1,7 +1,12 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
-from validator import _age_seconds, _is_transient_eval_error, _rank_sort_key
+from validator import (
+    _age_seconds,
+    _is_transient_eval_error,
+    _rank_sort_key,
+    _safe_block,
+)
 
 
 def _entry(**fields):
@@ -144,3 +149,42 @@ def test_is_transient_accepts_string_input():
 def test_is_not_transient_for_unrelated_string():
     is_transient, _reason = _is_transient_eval_error("unrelated message")
     assert is_transient is False
+
+
+# _safe_block — best-effort current-block reader. Returns 0 on any
+# subtensor RPC failure so the dethrone path can still record a king
+# transition without losing state. The fallback matters because losing
+# the block number would otherwise abort the whole transition path.
+
+class _FakeSubtensor:
+    """Minimal stub: only the .block attribute matters to _safe_block."""
+    def __init__(self, block):
+        self._block = block
+
+    @property
+    def block(self):
+        if isinstance(self._block, BaseException):
+            raise self._block
+        return self._block
+
+
+def test_safe_block_returns_int_value_on_happy_path():
+    assert _safe_block(_FakeSubtensor(12345)) == 12345
+
+
+def test_safe_block_coerces_to_int():
+    # Real subtensor.block returns an int-like; if it ever returns a
+    # numeric type that needs coercion (e.g. numpy int), int() handles it.
+    assert _safe_block(_FakeSubtensor(99.7)) == 99
+
+
+def test_safe_block_returns_zero_on_rpc_error():
+    # Any exception from accessing .block must collapse to 0 so the
+    # dethrone path keeps moving — see docstring rationale.
+    assert _safe_block(_FakeSubtensor(RuntimeError("rpc down"))) == 0
+
+
+def test_safe_block_returns_zero_on_attribute_error():
+    class NoBlock:
+        pass
+    assert _safe_block(NoBlock()) == 0
