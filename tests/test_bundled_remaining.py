@@ -13,9 +13,9 @@ import os
 
 import pytest
 
-import eval_torch
 import validator
-from eval_torch import parse_gpu_ids
+from eval import torch_runner as eval_torch
+from eval.torch_runner import parse_gpu_ids
 
 # =====================================================================
 # parse_gpu_ids — "0,1,2" → [0,1,2]; "auto" → range(device_count).
