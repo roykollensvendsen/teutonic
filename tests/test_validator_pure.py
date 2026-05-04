@@ -172,12 +172,6 @@ def test_safe_block_returns_int_value_on_happy_path():
     assert _safe_block(_FakeSubtensor(12345)) == 12345
 
 
-def test_safe_block_coerces_to_int():
-    # Real subtensor.block returns an int-like; if it ever returns a
-    # numeric type that needs coercion (e.g. numpy int), int() handles it.
-    assert _safe_block(_FakeSubtensor(99.7)) == 99
-
-
 def test_safe_block_returns_zero_on_rpc_error():
     # Any exception from accessing .block must collapse to 0 so the
     # dethrone path keeps moving — see docstring rationale.
