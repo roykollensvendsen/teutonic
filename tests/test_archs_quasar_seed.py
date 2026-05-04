@@ -23,7 +23,7 @@ def test_build_config_uses_module_constants_for_dims(monkeypatch):
     assert cfg.d_ff == 8192
 
 
-def test_build_config_hardcodes_invariants(monkeypatch):
+def test_build_config_hardcodes_invariants():
     # These are not env-overridable and must stay pinned: the seed
     # ships a tied-embedding BigMac MoE with the Gemma3 token IDs.
     cfg = seed.build_config()
@@ -58,7 +58,7 @@ def test_build_config_propagates_moe_fields(monkeypatch):
     assert cfg.bigmac_r == 0.5
 
 
-def test_build_config_sets_architectures_attribute(monkeypatch):
+def test_build_config_sets_architectures_attribute():
     # build_config attaches `architectures = ["QuasarForCausalLM"]` so
     # AutoModelForCausalLM dispatches to the vendored class without
     # trust_remote_code on consumer load.
