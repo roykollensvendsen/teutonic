@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Smoke test eval of Teutonic-VIII without going through the prod eval server.
+"""Smoke test eval of the active king without going through the prod eval server.
 
-Runs eval_torch's MultiGPUEvaluator + run_bootstrap_test directly with king
-== challenger == unconst/Teutonic-VIII. Validates: model loads at ~8B,
-probe passes, paired loss == 0 (same model), no OOM, throughput estimate.
+Validates: model loads, trainability probe passes, paired loss == 0 (king ==
+challenger), no OOM at chosen batch size, throughput estimate.
 
-Splits available GPUs in half (mimicking eval_server.py's king/challenger
-GPU split) so we measure under realistic memory pressure.
+The default --repo is read from chain.toml ([chain].seed_repo). The active
+arch package is loaded via chain_config.load_arch() so AutoModelForCausalLM
+resolves the king without trust_remote_code.
 
-Usage on Targon (the GPU box):
-    bash -c '. ~/env.sh && /root/eval-venv/bin/python smoke_eval_teutonic_viii.py'
+Notes:
+- The MoE+latent-memory path only supports attn_implementation eager
+  reliably; load_model already falls back through flash_attention_2 -> sdpa
+  -> eager.
+- Tune --batch-size based on VRAM headroom (default 64).
 
-Default `--batch-size 128` (vs Teutonic-III's 256) gives memory headroom for
-the larger model; bump to 256 if it fits.
+Usage on the GPU box:
+    bash -c '. ~/env.sh && /root/eval-venv/bin/python scripts/smoke_eval.py'
 """
 import argparse
 import json
@@ -28,22 +31,32 @@ logging.basicConfig(level=logging.INFO,
                     datefmt="%H:%M:%S")
 log = logging.getLogger("smoke")
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.expanduser("~"))
+# Force the in-repo eval/torch_runner.py (with reset_state hooks) to win
+# over any /root/eval_torch.py from a staging deploy.
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_repo_root = os.path.dirname(_script_dir)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+# A 50GB MoE seed needs more than the default 600s prefetch budget.
+os.environ.setdefault("HF_PREFETCH_TIMEOUT", "3600")
 
-from eval_torch import (
+import chain_config
+
+chain_config.load_arch()
+
+from eval.torch_runner import (
     R2, MultiGPUEvaluator, run_bootstrap_test, parse_gpu_ids,
-    trainability_probe, download_shard, get_shard_info,
+    trainability_probe, download_shard,
 )
-import eval_torch as _et
+from eval import torch_runner as _et
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--repo", default="unconst/Teutonic-VIII")
-    ap.add_argument("--eval-n", type=int, default=128)
+    ap.add_argument("--repo", default=chain_config.SEED_REPO)
+    ap.add_argument("--eval-n", type=int, default=64)
     ap.add_argument("--batch-size", type=int,
-                    default=int(os.environ.get("EVAL_BATCH_SIZE", "128")))
+                    default=int(os.environ.get("EVAL_BATCH_SIZE", "64")))
     ap.add_argument("--seq-len", type=int, default=2048)
     ap.add_argument("--gpus", default="auto")
     ap.add_argument("--shard", default=None)
@@ -129,16 +142,25 @@ def main():
         alpha=0.001,
         seq_len=args.seq_len,
         batch_size=args.batch_size,
-        seed_str="smoke:teutonic-viii",
+        seed_str=f"smoke:{chain_config.NAME.lower()}",
         n_bootstrap=1000,
     )
     elapsed = time.time() - t0
     log.info("bootstrap wall: %.1fs", elapsed)
     log.info("verdict: %s", json.dumps(verdict, indent=2))
 
+    # king == challenger should produce mu_hat exactly 0 (same model, same
+    # tokens, same RNG paths). Anything else is a state-leak bug.
+    mu = verdict.get("mu_hat", float("nan"))
+    if abs(mu) > 1e-6:
+        log.error("paired loss diff is non-zero with king==challenger: mu_hat=%s "
+                  "(state leak across forwards?)", mu)
+    else:
+        log.info("paired loss diff is zero — stateless contract holds")
+
     seq_per_s = verdict["N"] / elapsed if elapsed > 0 else 0
-    log.info("throughput: %.1f seq/s -> %.0f s for 20000 seqs",
-             seq_per_s, 20000 / seq_per_s if seq_per_s > 0 else float("inf"))
+    log.info("throughput: %.1f seq/s -> %.0f s for 10000 seqs",
+             seq_per_s, 10000 / seq_per_s if seq_per_s > 0 else float("inf"))
 
     king_eval.shutdown()
     if not same:
