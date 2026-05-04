@@ -8,7 +8,7 @@ A regression here silently produces wrong model architectures — the
 caller (modeling_quasar) builds layers by reading this list, so an
 off-by-one or flipped flag would mis-place attention vs gated blocks.
 """
-from quasar.configuration_quasar import QuasarConfig
+from archs.quasar.configuration_quasar import QuasarConfig
 
 
 def _config(*, n_layers, quasar_layers, gated_layers, use_gla_first):
