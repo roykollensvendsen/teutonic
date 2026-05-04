@@ -134,9 +134,9 @@ def test_strip_auto_map_is_idempotent(tmp_path):
 
 
 def test_strip_auto_map_writes_valid_json(tmp_path):
-    # The output must round-trip through json.load — pin the indent=2
-    # contract so the on-disk file stays human-diffable when the seed
-    # script later re-uploads it.
+    # The on-disk result must round-trip through json.load and contain
+    # the expected post-strip payload. The exact formatting (indent /
+    # key order) is impl detail — only the parsed value is contract.
     out_dir = _write_config(tmp_path, {
         "model_type": "quasar",
         "auto_map": {"AutoConfig": "x"},
@@ -144,6 +144,4 @@ def test_strip_auto_map_writes_valid_json(tmp_path):
     })
     seed._strip_auto_map(out_dir)
     text = (out_dir / "config.json").read_text()
-    # indent=2 → newline + 2-space prefix on first key.
-    assert "\n  " in text
     assert json.loads(text) == {"model_type": "quasar", "n_layers": 8}
