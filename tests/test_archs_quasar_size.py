@@ -1,11 +1,18 @@
-"""Tests for archs.quasar.size._classify.
+"""Tests for archs.quasar.size pure helpers.
 
-Maps a `model.named_parameters()` path string into one of 14 buckets.
-Used by `count_params` to break the total/active parameter count down
-per architectural component when sizing a model. First-match-wins on
-substring patterns; case-insensitive (lowercases the name before
-matching).
+Two pure functions live in size.py:
+
+* `_classify(name)` — maps a `model.named_parameters()` path string into
+  one of 14 buckets. Used by `count_params` to break the total/active
+  parameter count down per architectural component when sizing a model.
+  First-match-wins on substring patterns; case-insensitive (lowercases
+  the name before matching).
+
+* `build_config(args)` — argparse Namespace → QuasarConfig mapping.
+  Hardcodes `moe_type="bigmac"` and `num_key_value_heads=args.n_heads`;
+  every other field is read from the namespace.
 """
+import argparse
 import importlib
 import importlib.machinery
 import sys
@@ -35,7 +42,9 @@ def _stub_accelerate() -> None:
 
 
 _stub_accelerate()
-_classify = importlib.import_module("archs.quasar.size")._classify
+_size_mod = importlib.import_module("archs.quasar.size")
+_classify = _size_mod._classify
+build_config = _size_mod.build_config
 
 
 # ---------------------------------------------------------------------
@@ -158,3 +167,85 @@ def test_classify_priority_experts_over_router():
 # separately, so this priority is intentional).
 def test_classify_priority_embed_over_lm_head():
     assert _classify("model.embed_tokens.lm_head") == "embed"
+
+
+# ---------------------------------------------------------------------
+# build_config — argparse Namespace → QuasarConfig.
+
+def _full_args(**overrides):
+    """Build the argparse namespace `build_config` reads from.
+
+    Mirrors `archs.quasar.size.main`'s argparse defaults so each test
+    can override only the field it cares about.
+    """
+    defaults = {
+        "vocab_size": 262144,
+        "hidden": 4096,
+        "n_layers": 32,
+        "n_heads": 32,
+        "d_ff": 11008,
+        "head_dim": 128,
+        "max_seq_len": 16384,
+        "tie_word_embeddings": True,
+        "quasar_layers": 4,
+        "gated_layers": 2,
+        "memory_slots": 128,
+        "memory_dim": 128,
+        "num_shared_experts": 1,
+        "num_experts": 80,
+        "top_k": 10,
+        "shared_expert_size": 4096,
+        "routed_expert_size": 2560,
+        "dense_input_layers": 4,
+        "bigmac_r": 0.25,
+        "rope_theta": 1_000_000.0,
+        "bos_token_id": 2,
+        "eos_token_id": 1,
+        "pad_token_id": 0,
+    }
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+def test_build_config_propagates_basic_dims():
+    cfg = build_config(_full_args(hidden=2048, n_layers=16, d_ff=8192))
+    assert cfg.d_model == 2048
+    assert cfg.n_layers == 16
+    assert cfg.d_ff == 8192
+
+
+def test_build_config_hardcodes_moe_type_bigmac():
+    cfg = build_config(_full_args())
+    assert cfg.moe_type == "bigmac"
+
+
+def test_build_config_kv_heads_mirrors_n_heads():
+    # build_config maps args.n_heads → both n_heads and num_key_value_heads
+    # (i.e. MHA, not GQA). A divergence here would silently break the
+    # sizing report for any args that intended GQA.
+    cfg = build_config(_full_args(n_heads=24))
+    assert cfg.n_heads == 24
+    assert cfg.num_key_value_heads == 24
+
+
+def test_build_config_routes_num_experts_to_num_routed_experts():
+    # The CLI flag is `--num-experts` (args.num_experts) but the
+    # QuasarConfig field is `num_routed_experts`.
+    cfg = build_config(_full_args(num_experts=128))
+    assert cfg.num_routed_experts == 128
+
+
+def test_build_config_propagates_token_ids():
+    cfg = build_config(_full_args(bos_token_id=5, eos_token_id=6,
+                                  pad_token_id=7))
+    assert cfg.bos_token_id == 5
+    assert cfg.eos_token_id == 6
+    assert cfg.pad_token_id == 7
+
+
+def test_build_config_propagates_expert_sizes_and_top_k():
+    cfg = build_config(_full_args(top_k=4, shared_expert_size=3072,
+                                  routed_expert_size=1024))
+    assert cfg.top_k == 4
+    assert cfg.shared_expert_size == 3072
+    assert cfg.routed_expert_size == 1024
