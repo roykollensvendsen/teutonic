@@ -8,7 +8,7 @@ import struct
 import numpy as np
 import pytest
 
-from eval_torch import extract_sequences, math_isfinite
+from eval.torch_runner import extract_sequences, math_isfinite
 from validator import _REPO_RE, REPO_PATTERN, parse_args
 
 # `extract_sequences(shard_data, data_offset, indices, seq_len)` —
