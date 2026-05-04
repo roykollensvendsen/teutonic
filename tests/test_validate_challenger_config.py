@@ -179,13 +179,13 @@ def test_validate_rejects_extra_lock_key_mismatch(fake_hf, monkeypatch):
     assert "d_model" in rejection
 
 
-def test_validate_returns_none_when_king_cfg_unfetchable(fake_hf, mocker):
+def test_validate_returns_none_when_king_cfg_unfetchable(mocker):
     # If get_king_config returns falsy (HF lookup of king failed), the
     # function returns None — challenger is *not* rejected on a stale king
     # snapshot. This keeps the validator from rejecting everything when
-    # the king-side HF endpoint blips.
+    # the king-side HF endpoint blips. Returns None before challenger is
+    # ever fetched, so no fake_hf state is needed.
     mocker.patch("validator.get_king_config", return_value={})
-    fake_hf(CHALLENGER_REPO, CHALLENGER_REV, config=_matching_config(), files=_matching_files())
 
     rejection = validate_challenger_config(CHALLENGER_REPO, CHALLENGER_REV, KING_REPO, KING_REV)
 
