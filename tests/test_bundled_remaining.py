@@ -111,7 +111,7 @@ def test_evict_shard_cache_ignores_non_npy(temp_cache_dir, monkeypatch):
 # Returns falsy on HF failure (per call-site at validator.py:480).
 
 
-@pytest.fixture(autouse=False)
+@pytest.fixture
 def reset_king_config_cache():
     """Reset the module-level king-config cache between tests."""
     validator._king_config = None
