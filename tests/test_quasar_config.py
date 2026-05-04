@@ -30,11 +30,24 @@ def test_length_matches_n_layers():
     assert len(cfg._build_hybrid_layer_types()) == 12
 
 
-def test_length_matches_n_layers_when_smaller_than_cycle():
+def test_partial_cycle_when_n_layers_smaller_than_cycle():
     # n_layers < (quasar_layers + gated_layers) — partial cycle.
     cfg = _config(n_layers=3, quasar_layers=4, gated_layers=2,
                   use_gla_first=False)
-    assert len(cfg._build_hybrid_layer_types()) == 3
+    types = cfg._build_hybrid_layer_types()
+    # First 3 of cycle [quasar, quasar, quasar, quasar, gla, gla].
+    assert types == ["quasar", "quasar", "quasar"]
+
+
+def test_incomplete_trailing_cycle():
+    # n_layers=5, cycle_len=3 (quasar_layers=2 + gated_layers=1) —
+    # one full cycle + 2 trailing positions. The trailing piece must
+    # follow the cycle, not get truncated to all-quasar or restart.
+    cfg = _config(n_layers=5, quasar_layers=2, gated_layers=1,
+                  use_gla_first=False)
+    types = cfg._build_hybrid_layer_types()
+    # cycle = [quasar, quasar, gla] → 5 positions: cycle + first 2 of next
+    assert types == ["quasar", "quasar", "gla", "quasar", "quasar"]
 
 
 # ---------------------------------------------------------------------
