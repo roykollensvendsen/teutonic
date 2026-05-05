@@ -78,9 +78,13 @@ def test_load_model_forwards_repo_to_from_pretrained(fake_loader, mocker):
 
     load_model("miner/specific-repo", "cuda:0")
 
-    # First positional arg to from_pretrained is the repo id.
-    first_call_args = fake_loader.call_args_list[0].args
-    assert first_call_args[0] == "miner/specific-repo"
+    # `repo` may be passed positionally or as a kwarg — pin the contract
+    # that it ends up at `from_pretrained` somehow, not its argument
+    # binding style (which is a transformers-API impl detail).
+    assert fake_loader.call_count >= 1
+    call = fake_loader.call_args_list[0]
+    repo_seen = (call.args[0] if call.args else call.kwargs.get("pretrained_model_name_or_path"))
+    assert repo_seen == "miner/specific-repo"
 
 
 def test_load_model_forwards_revision_to_from_pretrained(fake_loader, mocker):
