@@ -41,6 +41,20 @@ VOCAB = 32
 HIDDEN = 8
 
 
+@pytest.fixture(autouse=True)
+def _reset_torch_rng():
+    """Pin global RNG so `_MicroLM()` init is deterministic per test.
+
+    The probe itself seeds its own generator (PROBE_SEED) for token
+    sampling, but parameter init at `_MicroLM()` construction reads
+    the global RNG. Without resetting, a previous test's RNG-consuming
+    operation could shift init enough to cross PROBE_LOSS_DELTA_REL
+    on the well-behaved test — surfacing as a flaky failure.
+    """
+    torch.manual_seed(0)
+    yield
+
+
 class _MicroLM(nn.Module):
     """Tiny CPU-only LM that satisfies trainability_probe's expectations.
 
