@@ -6,23 +6,7 @@ emission window. State._reconcile_chain_from_history rebuilds the
 top of that chain from history.jsonl on startup, recovering from
 crashed dethrones.
 """
-import pytest
-
 from validator import KING_CHAIN_DEPTH, State
-
-
-@pytest.fixture
-def r2_mock(mocker):
-    storage = {}
-    appended = {}
-    dashboards = {}
-    r2 = mocker.MagicMock()
-    r2.get.side_effect = lambda key: storage.get(key)
-    r2.put.side_effect = lambda key, data: storage.update({key: data})
-    r2.append_jsonl.side_effect = lambda key, rec: appended.setdefault(key, []).append(rec)
-    r2.put_dashboard.side_effect = lambda key, data: dashboards.update({key: data})
-    return r2
-
 
 # ---------------------------------------------------------------------
 # set_king — install new king, link to previous, cap chain depth.

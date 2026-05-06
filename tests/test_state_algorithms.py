@@ -8,19 +8,7 @@ Coverage targets:
 - State.recent_king_chain(depth): walk king + previous_king chain
 - State.topk_for_weight_set(): rank score_window's accepted verdicts
 """
-import pytest
-
 from validator import State
-
-
-@pytest.fixture
-def r2_mock(mocker):
-    """In-memory dict-backed mock of validator.R2."""
-    storage = {}
-    r2 = mocker.MagicMock()
-    r2.get.side_effect = lambda key: storage.get(key)
-    r2.put.side_effect = lambda key, data: storage.update({key: data})
-    return r2
 
 
 def _king(hotkey, previous=None, **extra):

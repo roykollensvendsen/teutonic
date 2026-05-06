@@ -4,34 +4,7 @@ These methods are individually small but together form the bookkeeping
 substrate that the heavier State algorithms rely on. All testable with
 the existing r2_mock pattern + manual State construction.
 """
-import pytest
-
 from validator import State
-
-
-@pytest.fixture
-def r2_mock(mocker):
-    """Dict-backed r2 mock supporting get, put, and append_jsonl
-    (the latter accumulates into a list of records per key)."""
-    storage = {}
-    appended = {}  # key -> list of records
-
-    def fake_get(key):
-        return storage.get(key)
-
-    def fake_put(key, data):
-        storage[key] = data
-
-    def fake_append_jsonl(key, record):
-        appended.setdefault(key, []).append(record)
-
-    r2 = mocker.MagicMock()
-    r2.get.side_effect = fake_get
-    r2.put.side_effect = fake_put
-    r2.append_jsonl.side_effect = fake_append_jsonl
-    r2._appended = appended  # expose for assertions
-    return r2
-
 
 # ---------------------------------------------------------------------
 # next_id — increments counter, returns formatted "eval-NNNN" string.

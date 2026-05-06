@@ -5,35 +5,11 @@ validator tick) and `bind_eval_server_to_validator` (httpx redirect
 to a FakeEvalServer instance).
 """
 import httpx
-import pytest
 
 from tests._harness.chain import FakeChain
 from tests._harness.eval_server import FakeEvalServer
 from tests._harness.tick import bind_eval_server_to_validator, run_chain_tick
 from validator import State
-
-
-@pytest.fixture
-def r2_mock(mocker):
-    """Dict-backed r2 mock — mirrors the pattern in test_state_helpers.py."""
-    storage = {}
-    appended = {}
-
-    def fake_get(key):
-        return storage.get(key)
-
-    def fake_put(key, data):
-        storage[key] = data
-
-    def fake_append_jsonl(key, record):
-        appended.setdefault(key, []).append(record)
-
-    r2 = mocker.MagicMock()
-    r2.get.side_effect = fake_get
-    r2.put.side_effect = fake_put
-    r2.append_jsonl.side_effect = fake_append_jsonl
-    r2._appended = appended
-    return r2
 
 
 def _valid_reveal_payload(repo: str = "alice/Teutonic-XXIV-chall") -> str:
