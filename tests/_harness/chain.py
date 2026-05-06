@@ -27,12 +27,14 @@ Mutator API (test setup):
 * `commit_reveal(hotkey, payload, *, block=None)` — append a reveal for
   `hotkey`. `block` defaults to the current block.
 * `set_emission(hotkey, em)` — update a registered hotkey's emission.
+  Raises `KeyError` if the hotkey hasn't been registered, so a typo
+  surfaces loudly instead of silently no-op'ing.
 
 NOT modeled (deliberately — consult the relevant mock if you need it):
 * `set_weights(...)` — write side. Tests that need to verify a weight
   push should mock `subtensor.set_weights` separately.
-* `get_block_hash(block)` — block-hash chain history. Stubbed to a
-  deterministic placeholder if a test calls it.
+* `get_block_hash(block)` — not exposed at all; consumers that reach
+  for it will get `AttributeError` rather than a misleading stub.
 * Real Bittensor websocket reconnect / RPC-error semantics. The chain
   never raises spontaneously; tests that need an RPC failure should
   override the relevant method with `monkeypatch`.
