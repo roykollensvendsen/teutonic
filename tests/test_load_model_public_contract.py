@@ -22,6 +22,14 @@ import pytest
 
 from eval.torch_runner import load_model
 
+# Each test in this file currently takes ~20s because load_model's
+# _prefetch_repo helper has unmocked retry-backoff (5s + 15s = 20s)
+# that the test fixture doesn't intercept. Mark the whole module slow
+# so `pytest -m "not slow"` skips them during fast local iteration.
+# A future fix would mock _prefetch_repo to drop the test runtime to
+# <1s — tracked separately.
+pytestmark = pytest.mark.slow
+
 
 @pytest.fixture
 def fake_loader(mocker):
