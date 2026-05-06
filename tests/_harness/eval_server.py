@@ -35,6 +35,9 @@ Test API for inspection:
 Test API for the consumer client:
 * `client()` — returns a fresh `httpx.AsyncClient` bound to the harness.
   Caller must close it (`async with server.client() as c:` recommended).
+* `app` — the bare FastAPI ASGI app. Use this to build your own
+  transport (e.g. for `tick.bind_eval_server_to_validator`, which
+  monkeypatches `httpx.AsyncClient` to use this app's ASGITransport).
 
 NOT modeled (deliberately):
 * Real GPU eval execution. The harness ships no model code; tests that
@@ -70,7 +73,7 @@ class FakeEvalServer:
         # queue_event call so tests can queue events before posting.
         self._events: dict[str, asyncio.Queue] = defaultdict(asyncio.Queue)
         self._posted_evals: list[dict] = []
-        self._app = self._build_app()
+        self.app = self._build_app()
 
     # ------------------------------------------------------------------
     # Test API — event injection.
@@ -96,7 +99,7 @@ class FakeEvalServer:
 
     def client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=self._app),
+            transport=httpx.ASGITransport(app=self.app),
             base_url="http://fake-eval-server",
         )
 
