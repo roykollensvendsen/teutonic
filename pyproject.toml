@@ -36,6 +36,11 @@ test = [
     # that's an open upstream question.
     "flash-linear-attention",
     "accelerate",
+    # `fla` imports `triton` unconditionally at module load. The CPU-only
+    # PyTorch wheels (used in CI to save space) don't bundle triton, so we
+    # add it here explicitly. fla detects unsupported platforms and falls
+    # back to CPU, so the import just needs to succeed.
+    "triton",
 ]
 
 [project.urls]
