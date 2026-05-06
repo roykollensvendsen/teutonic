@@ -28,6 +28,7 @@ test = [
     "pytest-mock>=3.14",
     "pytest-asyncio>=0.24",
     "pytest-xdist>=3.0",
+    "pytest-cov>=5.0",
     # Runtime deps that test collection imports transitively but
     # which are not declared in [project] dependencies. archs/quasar
     # imports `fla` (flash-linear-attention) and eval/torch_runner
@@ -65,6 +66,27 @@ markers = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.coverage.run]
+# What gets measured. Excluded: tests themselves, package __init__.py
+# (mostly re-exports), and the silx-ai dynamic-import shim files.
+source = ["validator", "miner", "eval_server", "archs", "eval"]
+omit = [
+    "tests/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+precision = 1
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    # Defensive `if __name__ == \"__main__\":` blocks aren't run in tests.
+    "if __name__ == .__main__.:",
+]
+# Don't fail on coverage threshold yet — we have no baseline. A
+# threshold can be added later once `coverage report` shows steady
+# numbers across a few runs.
 
 [tool.hatch.metadata]
 # Allow git URL references in [project.optional-dependencies] — required
