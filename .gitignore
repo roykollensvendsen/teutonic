@@ -20,6 +20,12 @@ env/
 *.pth
 *.ckpt
 
+# Coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # IDE / editor / agent
 .cursor/
 .vscode/
