@@ -193,11 +193,11 @@ async def test_consumer_can_read_stream_with_aiter_lines():
     async with server.client() as c:
         eid = (await c.post("/eval", json=_MIN_EVAL_REQUEST)).json()["eval_id"]
         server.queue_event(eid, type="verdict", data={"accepted": True})
+        data_lines: list[str] = []
         async with c.stream("GET", f"/eval/{eid}/stream") as stream:
-            data_lines = [
-                line for line in [ln async for ln in stream.aiter_lines()]
-                if line.startswith("data: ")
-            ]
+            async for line in stream.aiter_lines():
+                if line.startswith("data: "):
+                    data_lines.append(line)
     assert len(data_lines) == 1
     payload = json.loads(data_lines[0][len("data: "):])
     assert payload == {"type": "verdict", "data": {"accepted": True}}
