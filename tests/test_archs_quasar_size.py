@@ -45,6 +45,7 @@ _stub_accelerate()
 _size_mod = importlib.import_module("archs.quasar.size")
 _classify = _size_mod._classify
 build_config = _size_mod.build_config
+count_params = _size_mod.count_params
 
 
 # ---------------------------------------------------------------------
@@ -249,3 +250,106 @@ def test_build_config_propagates_expert_sizes_and_top_k():
     assert cfg.top_k == 4
     assert cfg.shared_expert_size == 3072
     assert cfg.routed_expert_size == 1024
+
+
+# ---------------------------------------------------------------------
+# count_params(model, cfg) — walk model.named_parameters() and split
+# each into total + active. Active diverges from total only for routed
+# MoE experts (`experts_w12` / `experts_w3`): only `top_k` of them
+# fire per token, so active = (numel / num_experts) * top_k.
+
+class _FakeParam:
+    """Stand-in for a torch.nn.Parameter: only numel() + shape used."""
+    def __init__(self, numel: int, shape=None):
+        self._numel = numel
+        self.shape = shape if shape is not None else (numel,)
+    def numel(self) -> int:
+        return self._numel
+
+
+class _FakeModel:
+    """Model with a controllable named_parameters() yield."""
+    def __init__(self, params):
+        self._params = list(params)
+    def named_parameters(self):
+        return iter(self._params)
+
+
+def test_count_params_sums_total_for_simple_model():
+    model = _FakeModel([
+        ("layers.0.attn.q_proj.weight", _FakeParam(100)),
+        ("layers.0.ffn.gate.weight", _FakeParam(200)),
+    ])
+    cfg = _full_args(tie_word_embeddings=False, top_k=10)
+    cfg = build_config(cfg)
+    total, active, by_class, by_class_active = count_params(model, cfg)
+    assert total == 300
+    assert active == 300  # no MoE — total == active
+
+
+def test_count_params_active_smaller_than_total_for_moe():
+    # 80 routed experts, top_k=10 → active = (numel/80)*10 = numel/8.
+    model = _FakeModel([
+        ("layers.0.moe.experts_w12", _FakeParam(numel=8000, shape=(80, 100))),
+    ])
+    cfg = build_config(_full_args(num_experts=80, top_k=10,
+                                   tie_word_embeddings=False))
+    total, active, _by, _by_a = count_params(model, cfg)
+    assert total == 8000
+    assert active == 1000  # 8000 // 80 * 10 = 1000
+
+
+def test_count_params_skips_lm_head_when_tied():
+    # Tied embeddings: lm_head shares storage with embed_tokens —
+    # counting both would double-count, so lm_head is dropped when
+    # tied=True.
+    model = _FakeModel([
+        ("model.embed_tokens.weight", _FakeParam(50000)),
+        ("lm_head.weight", _FakeParam(50000)),
+    ])
+    cfg = build_config(_full_args(tie_word_embeddings=True))
+    total, _active, _by, _by_a = count_params(model, cfg)
+    assert total == 50000  # lm_head dropped
+
+
+def test_count_params_keeps_lm_head_when_not_tied():
+    model = _FakeModel([
+        ("model.embed_tokens.weight", _FakeParam(50000)),
+        ("lm_head.weight", _FakeParam(50000)),
+    ])
+    cfg = build_config(_full_args(tie_word_embeddings=False))
+    total, _active, _by, _by_a = count_params(model, cfg)
+    assert total == 100000  # both counted
+
+
+def test_count_params_dedups_repeated_embed_tokens_when_tied():
+    # Some layouts emit `embed_tokens.weight` twice (from a wrapped
+    # state-dict). Tied dedup must drop the second occurrence to
+    # avoid double-counting.
+    model = _FakeModel([
+        ("model.embed_tokens.weight", _FakeParam(50000)),
+        ("model.embed_tokens.weight", _FakeParam(50000)),
+    ])
+    cfg = build_config(_full_args(tie_word_embeddings=True))
+    total, _active, _by, _by_a = count_params(model, cfg)
+    assert total == 50000  # second occurrence skipped
+
+
+def test_count_params_returns_per_class_breakdown():
+    # by_class / by_class_active group params by `_classify` bucket
+    # (attn, ffn, moe_routed, etc.). Pin that the breakdown sums to
+    # the totals.
+    model = _FakeModel([
+        ("layers.0.attn.q_proj.weight", _FakeParam(100)),
+        ("layers.0.ffn.gate.weight", _FakeParam(200)),
+        ("layers.0.norm.weight", _FakeParam(10)),
+    ])
+    cfg = build_config(_full_args(tie_word_embeddings=False))
+    total, active, by_class, by_class_active = count_params(model, cfg)
+    assert sum(by_class.values()) == total
+    assert sum(by_class_active.values()) == active
+    # Buckets present (named per `_classify` — note `ffn.gate` lands in
+    # `ffn_dense` bucket per the existing `_classify` test contract).
+    assert "attn" in by_class
+    assert "ffn_dense" in by_class
+    assert "norm" in by_class

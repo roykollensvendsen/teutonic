@@ -11,7 +11,7 @@ import io
 
 import numpy as np
 
-from eval.torch_runner import _parse_npy_header
+from eval.torch_runner import _parse_npy_header, _parse_shard_header
 
 # _parse_npy_header(raw: bytes) -> int
 # Docstring: "Return the byte offset where data begins in a .npy file."
@@ -70,3 +70,58 @@ def test_parse_npy_header_distinct_dtypes_yield_consistent_offsets():
         offset = _parse_npy_header(raw_bytes)
         assert raw_bytes[offset:offset + arr.nbytes] == arr.tobytes(), \
             f"offset mismatch for dtype={dtype}"
+
+
+# _parse_shard_header(r2, shard_key) -> int
+# Same parsing as _parse_npy_header but reads the first 1024 bytes from
+# r2 via `r2.ds_range_get(shard_key, 0, 1023)`. fetch_sequences uses the
+# returned offset to know where the data section begins so it can compute
+# byte ranges for individual sequences.
+
+class _FakeR2:
+    """Tiny r2 stub with a programmable ds_range_get."""
+    def __init__(self, data: bytes):
+        self._data = data
+        self.calls: list[tuple[str, int, int]] = []
+
+    def ds_range_get(self, key: str, start: int, end: int) -> bytes:
+        self.calls.append((key, start, end))
+        return self._data[start:end + 1]
+
+
+def test_parse_shard_header_returns_offset_matching_parse_npy_header():
+    # The two parsers must agree on the offset for the same npy bytes.
+    arr = np.zeros(8, dtype=np.float32)
+    raw = io.BytesIO()
+    np.save(raw, arr)
+    raw_bytes = raw.getvalue()
+
+    expected = _parse_npy_header(raw_bytes)
+    r2 = _FakeR2(raw_bytes)
+    actual = _parse_shard_header(r2, "shards/0.npy")
+    assert actual == expected
+
+
+def test_parse_shard_header_reads_first_1024_bytes():
+    # The parser pulls a 1024-byte prefix via ds_range_get(0, 1023) —
+    # consistent with how fetch_sequences locates the data section.
+    arr = np.zeros(4, dtype=np.float32)
+    raw = io.BytesIO()
+    np.save(raw, arr)
+    r2 = _FakeR2(raw.getvalue())
+    _parse_shard_header(r2, "shards/0.npy")
+    assert r2.calls == [("shards/0.npy", 0, 1023)]
+
+
+def test_parse_shard_header_offset_locates_data_section():
+    # Offset returned by the parser must let a caller slice straight to
+    # the data bytes. Mirrors how fetch_sequences uses it.
+    arr = np.arange(16, dtype=np.uint32)
+    raw = io.BytesIO()
+    np.save(raw, arr)
+    raw_bytes = raw.getvalue()
+
+    r2 = _FakeR2(raw_bytes)
+    offset = _parse_shard_header(r2, "shards/0.npy")
+    # The bytes starting at `offset` should be the data section.
+    assert raw_bytes[offset:offset + arr.nbytes] == arr.tobytes()
