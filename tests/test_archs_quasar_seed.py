@@ -145,3 +145,90 @@ def test_strip_auto_map_writes_valid_json(tmp_path):
     seed._strip_auto_map(out_dir)
     text = (out_dir / "config.json").read_text()
     assert json.loads(text) == {"model_type": "quasar", "n_layers": 8}
+
+
+# ---------------------------------------------------------------------
+# _count_active(model, cfg) — return (total, active_per_token).
+# Mirrors archs/quasar/size.py count_params for the active-param math:
+# routed MoE experts contribute `numel/num_experts * top_k` to active.
+
+class _FakeParam:
+    """Stand-in for a torch.nn.Parameter: only numel() + shape used."""
+    def __init__(self, numel: int, shape=None):
+        self._numel = numel
+        self.shape = shape if shape is not None else (numel,)
+    def numel(self) -> int:
+        return self._numel
+
+
+class _FakeModel:
+    """Model with a controllable named_parameters() yield."""
+    def __init__(self, params):
+        self._params = list(params)
+    def named_parameters(self):
+        return iter(self._params)
+
+
+def _cfg(*, tie_word_embeddings: bool = True, top_k: int = 8):
+    """Tiny QuasarConfig stand-in — only fields _count_active reads."""
+    from types import SimpleNamespace
+    return SimpleNamespace(tie_word_embeddings=tie_word_embeddings, top_k=top_k)
+
+
+def test_count_active_total_equals_active_for_dense_model():
+    # No MoE routed experts → every parameter counts fully toward active.
+    model = _FakeModel([
+        ("layers.0.attn.q_proj.weight", _FakeParam(100)),
+        ("layers.0.ffn.gate.weight", _FakeParam(200)),
+    ])
+    total, active = seed._count_active(model, _cfg(tie_word_embeddings=False))
+    assert total == 300
+    assert active == 300
+
+
+def test_count_active_routed_experts_apply_topk_factor():
+    # 80 routed experts, top_k=10 → active = (numel/80)*10 = numel/8.
+    model = _FakeModel([
+        ("layers.0.moe.experts_w12", _FakeParam(numel=8000, shape=(80, 100))),
+    ])
+    total, active = seed._count_active(model, _cfg(tie_word_embeddings=False, top_k=10))
+    assert total == 8000
+    assert active == 1000  # 8000/80 * 10
+
+
+def test_count_active_handles_experts_w3_same_as_w12():
+    # Both `experts_w12` and `experts_w3` are routed-expert weights;
+    # the topk-factor applies identically.
+    model = _FakeModel([
+        ("layers.0.moe.experts_w3", _FakeParam(numel=4000, shape=(40, 100))),
+    ])
+    total, active = seed._count_active(model, _cfg(tie_word_embeddings=False, top_k=8))
+    assert total == 4000
+    assert active == 800  # 4000/40 * 8
+
+
+def test_count_active_skips_lm_head_when_tied():
+    model = _FakeModel([
+        ("model.embed_tokens.weight", _FakeParam(50000)),
+        ("lm_head.weight", _FakeParam(50000)),
+    ])
+    total, _active = seed._count_active(model, _cfg(tie_word_embeddings=True))
+    assert total == 50000  # lm_head dropped
+
+
+def test_count_active_keeps_lm_head_when_not_tied():
+    model = _FakeModel([
+        ("model.embed_tokens.weight", _FakeParam(50000)),
+        ("lm_head.weight", _FakeParam(50000)),
+    ])
+    total, _active = seed._count_active(model, _cfg(tie_word_embeddings=False))
+    assert total == 100000
+
+
+def test_count_active_dedups_repeated_embed_tokens_when_tied():
+    model = _FakeModel([
+        ("model.embed_tokens.weight", _FakeParam(50000)),
+        ("model.embed_tokens.weight", _FakeParam(50000)),
+    ])
+    total, _active = seed._count_active(model, _cfg(tie_word_embeddings=True))
+    assert total == 50000  # second occurrence skipped
