@@ -5,7 +5,10 @@ main loop without RPC. Models the read-API surface the validator
 actually consumes (see `validator.py` callsites of `subtensor.<x>`):
 
 Read API (matches subtensor):
-* `block` property — current block (int).
+* `block` property — current block (int). If the chain was constructed
+  with `block_raises=<exc>`, accessing `block` raises that exception
+  instead — useful for testing RPC-failure error-handling paths
+  (`validator._safe_block` and similar).
 * `metagraph(netuid)` — returns a SimpleNamespace with attributes
   `hotkeys` (list[str] indexed by uid), `emission` (list[float] indexed
   by uid), and `coldkeys` (list[str | None] indexed by uid). The
@@ -36,8 +39,9 @@ NOT modeled (deliberately — consult the relevant mock if you need it):
 * `get_block_hash(block)` — not exposed at all; consumers that reach
   for it will get `AttributeError` rather than a misleading stub.
 * Real Bittensor websocket reconnect / RPC-error semantics. The chain
-  never raises spontaneously; tests that need an RPC failure should
-  override the relevant method with `monkeypatch`.
+  never raises spontaneously EXCEPT on `.block` access when
+  `block_raises` was set. Tests that need RPC failures on other
+  methods should monkeypatch the relevant method directly.
 """
 from __future__ import annotations
 
@@ -45,8 +49,17 @@ from types import SimpleNamespace
 
 
 class FakeChain:
-    def __init__(self, *, block: int = 0):
+    def __init__(
+        self,
+        *,
+        block: int = 0,
+        block_raises: BaseException | None = None,
+    ):
         self._block = int(block)
+        # When set, `.block` access raises this exception. Used to drive
+        # validator error-handling paths like `_safe_block` that catch
+        # any exception during block retrieval.
+        self._block_raises = block_raises
         # Indexed by uid. Non-registered slots are "" so list-of-hotkeys
         # access by uid stays a valid-but-non-matching string rather
         # than raising IndexError or returning None.
@@ -61,6 +74,8 @@ class FakeChain:
 
     @property
     def block(self) -> int:
+        if self._block_raises is not None:
+            raise self._block_raises
         return self._block
 
     def metagraph(self, netuid: int) -> SimpleNamespace:  # noqa: ARG002
