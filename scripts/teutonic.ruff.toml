@@ -1,0 +1,36 @@
+# Ruff config for teutonic.
+#
+# Used by:
+# - GitHub Actions workflow (.github/workflows/tests.yml)
+# - Local pre-commit hook installed via install_teutonic_hook.sh
+#
+# Matches the conventions observed in upstream teutonic code rather than
+# imposing an outside style — rules that would flag intentional teutonic
+# patterns (broad except, sparse class-attr typing, etc.) are deliberately
+# excluded.
+
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes (unused imports/vars, undefined names)
+    "I",    # isort (import order)
+    "UP",   # pyupgrade (modern Python — they use PEP 604 unions)
+    "B",    # flake8-bugbear (common bug patterns)
+    "C4",   # flake8-comprehensions (idiomatic comprehensions)
+    "SIM",  # flake8-simplify (simpler equivalents)
+]
+ignore = [
+    "E501",   # line too long — pycodestyle is too strict; 120 cap above is enough
+    "B008",   # function call in argument default — bittensor APIs do this
+    "SIM108", # use ternary instead of if/else — readability is subjective
+]
+
+[lint.isort]
+combine-as-imports = true
+known-first-party = ["teutonic", "quasar"]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports are fine in __init__.py
