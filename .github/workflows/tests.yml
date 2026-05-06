@@ -51,9 +51,26 @@ jobs:
           source .venv/bin/activate
           ruff check --config scripts/teutonic.ruff.toml tests/
 
-      - name: Pytest (parallel via pytest-xdist)
+      - name: Pytest (parallel + coverage)
         # `-n auto` parallelises across runner cores. ubuntu-latest has
         # 4 cores typically; suite drops from ~90s serial to ~30s parallel.
+        # `--cov` collects coverage across the source dirs configured in
+        # pyproject's [tool.coverage.run].
         run: |
           source .venv/bin/activate
-          pytest tests/ -v -n auto
+          pytest tests/ -v -n auto \
+            --cov \
+            --cov-report=term \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov
+
+      - name: Upload coverage artifact
+        # Always-uploaded; available even on failed runs for diagnosis.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: |
+            coverage.xml
+            htmlcov/
+          retention-days: 14
