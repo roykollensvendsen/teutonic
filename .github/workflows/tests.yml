@@ -1,0 +1,57 @@
+# CI workflow for the teutonic test suite.
+#
+# Runs ruff + pytest on every push and pull_request that targets
+# tests/foundation. Does NOT trigger on main — that branch tracks
+# upstream (unarbos/teutonic) and isn't ours to validate.
+#
+# Caching strategy: uv-managed pip cache keyed on pyproject.toml so
+# subsequent runs reuse the heavy torch/transformers/bittensor
+# downloads. Expected runtime: ~5 min cold, ~2 min warm.
+
+name: tests
+
+on:
+  push:
+    branches: [tests/foundation]
+  pull_request:
+    branches: [tests/foundation]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Create venv and install dependencies (CPU-only torch)
+        # The CPU-only PyTorch wheel index keeps the install reasonable
+        # for CI. The validator + eval modules import torch at module
+        # load, so a real torch install is required for test collection.
+        # Both [dev,test] extras pull in ruff + pytest{,-mock,-asyncio}.
+        run: |
+          uv venv
+          uv pip install -e ".[dev,test]" \
+            --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Ruff check
+        run: |
+          source .venv/bin/activate
+          ruff check --config scripts/teutonic.ruff.toml tests/
+
+      - name: Pytest
+        run: |
+          source .venv/bin/activate
+          pytest tests/ -v
