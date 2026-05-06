@@ -5,24 +5,7 @@ Dashboard flush is presentational and rate-limited
 rate-limit. Critically, it MUST NEVER raise into the main eval loop —
 even on R2/Hippius outages the validator must keep evaluating.
 """
-import pytest
-
 from validator import State
-
-
-@pytest.fixture
-def r2_mock(mocker):
-    storage = {}
-    appended = {}
-    dashboards = {}
-    r2 = mocker.MagicMock()
-    r2.get.side_effect = lambda key: storage.get(key)
-    r2.put.side_effect = lambda key, data: storage.update({key: data})
-    r2.append_jsonl.side_effect = lambda key, rec: appended.setdefault(key, []).append(rec)
-    r2.put_dashboard.side_effect = lambda key, data: dashboards.update({key: data})
-    r2._dashboards = dashboards
-    return r2
-
 
 # ---------------------------------------------------------------------
 # Rate-limit semantics.

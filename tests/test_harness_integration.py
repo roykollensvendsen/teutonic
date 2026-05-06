@@ -26,37 +26,11 @@ Out of scope (deliberately):
 import json
 
 import httpx
-import pytest
 
 from tests._harness.chain import FakeChain
 from tests._harness.eval_server import FakeEvalServer
 from tests._harness.tick import bind_eval_server_to_validator, run_chain_tick
 from validator import State
-
-
-@pytest.fixture
-def r2_mock(mocker):
-    """Dict-backed R2 mock with dashboard capture (mirrors test_state_*).
-
-    Same pattern as `tests/test_uid_mapping_race.py` and
-    `tests/test_state_dashboard.py` — keeps the integration test
-    consistent with how the rest of the suite mocks R2 access.
-    """
-    storage: dict = {}
-    dashboards: dict = {}
-    appended: dict = {}
-    r2 = mocker.MagicMock()
-    r2.get.side_effect = lambda key: storage.get(key)
-    r2.put.side_effect = lambda key, data: storage.update({key: data})
-    r2.append_jsonl.side_effect = (
-        lambda key, rec: appended.setdefault(key, []).append(rec)
-    )
-    r2.put_dashboard.side_effect = (
-        lambda key, data: dashboards.update({key: data})
-    )
-    r2._dashboards = dashboards
-    r2._appended = appended
-    return r2
 
 
 async def test_chain_reveal_to_eval_verdict_flow_uses_all_three_harnesses(

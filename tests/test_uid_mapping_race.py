@@ -34,27 +34,6 @@ import pytest
 from tests._harness.chain import FakeChain
 from validator import State
 
-
-@pytest.fixture
-def r2_mock(mocker):
-    """Dict-backed mock of validator.R2 with dashboard capture.
-
-    Mirrors the pattern in test_state_dashboard.py so the dashboard
-    payload can be inspected via `r2._dashboards["dashboard.json"]`.
-    """
-    storage: dict = {}
-    dashboards: dict = {}
-    r2 = mocker.MagicMock()
-    r2.get.side_effect = lambda key: storage.get(key)
-    r2.put.side_effect = lambda key, data: storage.update({key: data})
-    r2.append_jsonl.side_effect = lambda key, rec: None
-    r2.put_dashboard.side_effect = (
-        lambda key, data: dashboards.update({key: data})
-    )
-    r2._dashboards = dashboards
-    return r2
-
-
 # ---------------------------------------------------------------------
 # refresh_uid_map basic behavior.
 
