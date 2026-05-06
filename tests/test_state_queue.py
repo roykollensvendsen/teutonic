@@ -5,26 +5,7 @@ Covers:
 - requeue_front(entry, *, reason, ...): retry transient failures
 - record_failure(entry, error_code, error_detail): note failure
 """
-import pytest
-
 from validator import State
-
-
-@pytest.fixture
-def r2_mock(mocker):
-    storage = {}
-    appended = {}
-    dashboards = {}
-
-    r2 = mocker.MagicMock()
-    r2.get.side_effect = lambda key: storage.get(key)
-    r2.put.side_effect = lambda key, data: storage.update({key: data})
-    r2.append_jsonl.side_effect = lambda key, rec: appended.setdefault(key, []).append(rec)
-    r2.put_dashboard.side_effect = lambda key, data: dashboards.update({key: data})
-    r2._storage = storage
-    r2._appended = appended
-    r2._dashboards = dashboards
-    return r2
 
 
 def _reveal(hotkey, repo, *, challenge_id="ch-1"):

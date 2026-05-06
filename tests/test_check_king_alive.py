@@ -19,20 +19,6 @@ from validator import State, check_king_alive
 
 
 @pytest.fixture
-def r2_mock(mocker):
-    storage = {}
-    appended = {}
-    dashboards = {}
-    r2 = mocker.MagicMock()
-    r2.get.side_effect = lambda key: storage.get(key)
-    r2.put.side_effect = lambda key, data: storage.update({key: data})
-    r2.append_jsonl.side_effect = lambda key, rec: appended.setdefault(key, []).append(rec)
-    r2.put_dashboard.side_effect = lambda key, data: dashboards.update({key: data})
-    r2._appended = appended
-    return r2
-
-
-@pytest.fixture
 def fake_hf(mocker):
     """Mock validator.HfApi.model_info — caller controls success/failure."""
     api_instance = mocker.MagicMock()
