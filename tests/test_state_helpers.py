@@ -219,3 +219,44 @@ def test_with_fresh_uid_does_not_mutate_input(r2_mock):
     entry = {"hotkey": "hk1", "uid": 999}
     s._with_fresh_uid(entry)
     assert entry["uid"] == 999  # original unchanged
+
+
+def test_with_fresh_uid_refreshes_coldkey_from_metagraph(r2_mock):
+    # The dashboard hotkey -> coldkey link must point at the *current*
+    # coldkey for a hotkey rather than whatever was on file when the
+    # duel was recorded — see docstring on validator.py:1414.
+    s = State(r2_mock)
+    s.uid_map = {"hk1": 42}
+    s.hotkey_coldkey = {"hk1": "ck_current"}
+    entry = {"hotkey": "hk1", "uid": 0, "coldkey": "ck_stale"}
+    fresh = s._with_fresh_uid(entry)
+    assert fresh["coldkey"] == "ck_current"
+
+
+def test_with_fresh_uid_falls_back_to_persisted_coldkey_when_deregistered(r2_mock):
+    # The docstring says: "fall back to the persisted value only if
+    # the hotkey has been deregistered out of the metagraph". Pin
+    # that contract — if hotkey_coldkey doesn't have hk1, return the
+    # entry's stored coldkey untouched.
+    s = State(r2_mock)
+    s.uid_map = {"hk1": 42}
+    s.hotkey_coldkey = {}  # hk1 has been deregistered
+    entry = {"hotkey": "hk1", "uid": 0, "coldkey": "ck_archived"}
+    fresh = s._with_fresh_uid(entry)
+    assert fresh["coldkey"] == "ck_archived"
+
+
+def test_with_fresh_uid_returns_entry_unchanged_when_not_dict(r2_mock):
+    # Defensive branch: if entry isn't a dict (e.g. None, str, int),
+    # _with_fresh_uid returns it as-is rather than crashing on .get().
+    s = State(r2_mock)
+    assert s._with_fresh_uid(None) is None
+    assert s._with_fresh_uid("not-a-dict") == "not-a-dict"
+
+
+def test_with_fresh_uid_returns_entry_unchanged_when_no_hotkey(r2_mock):
+    # Same branch from a different angle: dict without "hotkey" key.
+    s = State(r2_mock)
+    entry = {"challenge_id": "x", "uid": 5}  # no hotkey field
+    fresh = s._with_fresh_uid(entry)
+    assert fresh is entry  # identity, not a copy
