@@ -27,6 +27,7 @@ test = [
     "pytest>=8.0",
     "pytest-mock>=3.14",
     "pytest-asyncio>=0.24",
+    "pytest-xdist>=3.0",
     # Runtime deps that test collection imports transitively but
     # which are not declared in [project] dependencies. archs/quasar
     # imports `fla` (flash-linear-attention) and eval/torch_runner
@@ -56,6 +57,10 @@ Repository = "https://github.com/unarbos/teutonic"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "slow: tests that take >1s individually (e.g. load_model retry-backoff path). Skip locally with `pytest -m 'not slow'` for fast iteration.",
+    "integration: tests that exercise multiple harness modules together (chain + eval-server + tick). Run focused with `pytest -m integration`.",
+]
 
 [build-system]
 requires = ["hatchling"]
