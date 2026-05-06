@@ -34,7 +34,13 @@ test = [
     # self-sufficient (`uv pip install -e ".[test]"` Just Works) without
     # taking a position on whether they belong in core dependencies —
     # that's an open upstream question.
-    "flash-linear-attention",
+    # The SILX-LABS fork of flash-linear-attention adds the `quasar`
+    # layer (fla.layers.quasar.QuasarAttention) that archs/quasar/
+    # imports. PyPI's flash-linear-attention 0.5.0 does NOT include this
+    # layer — using the git URL pinned to the commit local development
+    # has been validated against. If upstream adopts the fork or the fork
+    # publishes to PyPI, we can switch to a version pin.
+    "flash-linear-attention @ git+https://github.com/SILX-LABS/quasar-flash-linear-attention.git@84ad1cc5a7428609d7e0e56d4041a775cd19b7bb",
     "accelerate",
     # `fla` imports `triton` unconditionally at module load. The CPU-only
     # PyTorch wheels (used in CI to save space) don't bundle triton, so we
