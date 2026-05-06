@@ -61,6 +61,11 @@ asyncio_mode = "auto"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.metadata]
+# Allow git URL references in [project.optional-dependencies] — required
+# for the pinned SILX-LABS fork of flash-linear-attention in [test].
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["archs", "eval"]
 only-include = [
