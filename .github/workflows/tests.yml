@@ -51,7 +51,9 @@ jobs:
           source .venv/bin/activate
           ruff check --config scripts/teutonic.ruff.toml tests/
 
-      - name: Pytest
+      - name: Pytest (parallel via pytest-xdist)
+        # `-n auto` parallelises across runner cores. ubuntu-latest has
+        # 4 cores typically; suite drops from ~90s serial to ~30s parallel.
         run: |
           source .venv/bin/activate
-          pytest tests/ -v
+          pytest tests/ -v -n auto

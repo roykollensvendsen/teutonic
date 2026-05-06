@@ -26,11 +26,16 @@ Out of scope (deliberately):
 import json
 
 import httpx
+import pytest
 
 from tests._harness.chain import FakeChain
 from tests._harness.eval_server import FakeEvalServer
 from tests._harness.tick import bind_eval_server_to_validator, run_chain_tick
 from validator import State
+
+# Cross-harness integration test: exercises M1 + M2 + M3 together.
+# Run focused with `pytest -m integration`.
+pytestmark = pytest.mark.integration
 
 
 async def test_chain_reveal_to_eval_verdict_flow_uses_all_three_harnesses(
