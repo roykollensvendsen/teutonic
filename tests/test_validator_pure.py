@@ -1,6 +1,7 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+from tests._harness.chain import FakeChain
 from validator import (
     _age_seconds,
     _is_transient_eval_error,
@@ -156,29 +157,21 @@ def test_is_not_transient_for_unrelated_string():
 # transition without losing state. The fallback matters because losing
 # the block number would otherwise abort the whole transition path.
 
-class _FakeSubtensor:
-    """Minimal stub: only the .block attribute matters to _safe_block."""
-    def __init__(self, block):
-        self._block = block
-
-    @property
-    def block(self):
-        if isinstance(self._block, BaseException):
-            raise self._block
-        return self._block
-
-
 def test_safe_block_returns_int_value_on_happy_path():
-    assert _safe_block(_FakeSubtensor(12345)) == 12345
+    assert _safe_block(FakeChain(block=12345)) == 12345
 
 
 def test_safe_block_returns_zero_on_rpc_error():
     # Any exception from accessing .block must collapse to 0 so the
     # dethrone path keeps moving — see docstring rationale.
-    assert _safe_block(_FakeSubtensor(RuntimeError("rpc down"))) == 0
+    assert _safe_block(FakeChain(block_raises=RuntimeError("rpc down"))) == 0
 
 
 def test_safe_block_returns_zero_on_attribute_error():
+    # Pinpoints the AttributeError branch: an object that's missing
+    # the .block attribute entirely (not just raising on access).
+    # FakeChain always has a .block property, so we use a bare object
+    # for this case.
     class NoBlock:
         pass
     assert _safe_block(NoBlock()) == 0

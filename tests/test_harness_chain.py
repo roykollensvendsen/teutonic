@@ -34,6 +34,24 @@ def test_advance_block_with_n_bumps_by_n():
     assert chain.block == 15
 
 
+def test_block_raises_when_constructed_with_block_raises():
+    # Drives validator error-handling paths like `_safe_block` that
+    # catch any exception during `.block` access. Keeps the harness
+    # contract explicit instead of forcing tests to monkeypatch the
+    # property descriptor.
+    chain = FakeChain(block_raises=RuntimeError("rpc down"))
+    with pytest.raises(RuntimeError, match="rpc down"):
+        _ = chain.block
+
+
+def test_block_raises_with_arbitrary_exception_type():
+    # Any BaseException subclass works — not just RuntimeError. Tests
+    # for asyncio.CancelledError-style paths can use the same hook.
+    chain = FakeChain(block_raises=ValueError("not a block"))
+    with pytest.raises(ValueError, match="not a block"):
+        _ = chain.block
+
+
 # ---------------------------------------------------------------------
 # metagraph(netuid) — returns SimpleNamespace with hotkeys, emission, coldkeys.
 
