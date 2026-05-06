@@ -186,3 +186,67 @@ def test_expected_coldkey_prefix_is_none_during_staleness_window(r2_mock):
     assert s.expected_coldkey_prefix("D") is None
     # Sanity: A is in the snapshot so its prefix resolves.
     assert s.expected_coldkey_prefix("A") is not None
+
+
+# ---------------------------------------------------------------------
+# xfail-pinned bug expectations — these are the assertions we WANT
+# the system to satisfy. They fail today (the bug exists) and will
+# auto-flip to passing when the staleness fix lands. The
+# characterization tests above pin the *current* (buggy) behaviour
+# as regression coverage; these xfail tests document the *desired*
+# behaviour so a CI reader sees "yes, this is a real bug".
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Kyle's UID-mapping-race bug. Fix is a separate plan. "
+           "When the fix lands (reorder refresh_uid_map vs scan_reveals, "
+           "or refresh again before flush_dashboard, or signature change "
+           "to flush_dashboard), this xfail flips to pass.",
+)
+def test_dashboard_should_show_correct_uid_for_freshly_registered_miner(r2_mock):
+    s = State(r2_mock)
+    chain = FakeChain()
+    for hk, uid in [("A", 0), ("B", 1), ("C", 2)]:
+        chain.register(hk, uid=uid)
+    s.refresh_uid_map(chain, netuid=3)
+
+    # D registers + reveals AFTER the snapshot — the staleness window.
+    chain.register("D", uid=3)
+    s.enqueue({
+        "hotkey": "D",
+        "hf_repo": "miner/d-repo",
+        "challenge_id": "x",
+        "reveal_block": 100,
+    })
+
+    s.flush_dashboard(force=True)
+
+    payload = r2_mock._dashboards["dashboard.json"]
+    d_entries = [e for e in payload["queue"] if e["hotkey"] == "D"]
+    assert len(d_entries) == 1
+    # WANT: dashboard renders D's actual on-chain uid (3).
+    # GET today: None (bug — uid_map is stale).
+    assert d_entries[0]["uid"] == 3
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Kyle's UID-mapping-race bug. Fix is a separate plan. "
+           "Same staleness as the dashboard test, second visible "
+           "consequence: process_challenge's coldkey-prefix gate skips "
+           "the check during the staleness window. When the fix lands, "
+           "expected_coldkey_prefix resolves for fresh registrations and "
+           "this xfail flips to pass.",
+)
+def test_expected_coldkey_prefix_should_resolve_for_freshly_registered_hotkey(r2_mock):
+    s = State(r2_mock)
+    chain = FakeChain()
+    chain.register("A", uid=0, coldkey="ck_A_long_ss58_prefix")
+    s.refresh_uid_map(chain, netuid=3)
+
+    chain.register("D", uid=1, coldkey="ck_D_long_ss58_prefix")
+
+    # WANT: prefix resolves to the first 8 chars (COLDKEY_PREFIX_LEN
+    # default) of D's on-chain coldkey.
+    # GET today: None (bug — hotkey_coldkey is stale).
+    assert s.expected_coldkey_prefix("D") == "ck_D_lon"
