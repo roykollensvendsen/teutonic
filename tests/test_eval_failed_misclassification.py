@@ -7,30 +7,42 @@ Discord triage 2026-05-04: high-volume complaints about models showing
   "do we have any logic for these eval failed models?"
   "30 minutes per eval average + random failure ... unsustainable"
 
-Root cause investigation:
+Production-data analysis (2026-05-06 dashboard.json snapshot from the
+live validator at https://us-east-1.hippius.com/teutonic-sn3/):
 
-`process_challenge` raises `RuntimeError("eval stream ended without
-verdict")` (validator.py around line 2174) when the eval-server's SSE
-stream closes without delivering a final verdict event (eval-server
-restart, tunnel blip, k8s pod cycle, etc.).
+  * 304 history entries; 94 (31%) have `verdict="error"`.
+  * Within `verdict="error"`, `error_code="eval_error"` dominates:
+    61/94 (65% of errors, 20% of all duels).
+  * Within those 61 `eval_error` entries, the top distinct
+    `error_detail` strings:
+      27  "Server disconnected without sending a response."  TRANSIENT (retry-cap exhausted)
+      17  "eval server error: ... could not load model with any
+          attention implementation"                          TRANSIENT (retry-cap exhausted)
+       6  "All connection attempts failed"                   PERMANENT — MISCLASSIFIED ❌
+       3  "" (empty)                                         PERMANENT
+       2  "0"                                                PERMANENT
+       2  "eval server error: ... mat1/mat2 dtype"           TRANSIENT (retry-cap exhausted)
+       3  "eval server error: ... prefetch ... stuck CDN"    TRANSIENT (retry-cap exhausted)
+       1  "eval server error: ... unpack ... 2 bytes"        TRANSIENT (retry-cap exhausted)
 
-`_is_transient_eval_error` (validator.py:1863) checks the exception
-text against a hardcoded marker list. NONE of those markers match the
-substring "eval stream ended without verdict", so the exception is
-classified as PERMANENT — `record_failure(..., "eval_error", ...)`
-puts it in the duel history and `state.failed_repos.add(hf_repo)`.
+  The dominant CLASSIFIER bug in production is "All connection attempts
+  failed" — httpx.ConnectError's str() output. The marker list in
+  validator._is_transient_eval_error contains "connecterror" but that
+  matches the type name, not the str(). Real httpx exceptions never
+  contain "connecterror" in their string representation, so 6 entries
+  in the snapshot landed in `state.failed_repos` as permanent failures
+  for what is unambiguously a transient TCP / DNS issue.
 
-But the dashboard renders this exact error_detail with the message
-"This is likely transient -- your model will be retried"
-(website/index.html:481). Direct mismatch: the dashboard tells miners
-their model will retry; the validator never retries it.
+  The bigger PRACTICAL bug — 44+ entries (27+17+others) classified as
+  transient but exhausting MAX_TRANSIENT_EVAL_RETRIES (3) — is a
+  retry-cap / infra issue, not a classifier issue. Out of scope for
+  this PR; tracked separately.
 
-These tests pin the classifier's behaviour — current marker coverage
-plus an xfail-strict regression test that demonstrates the
-misclassification. When the fix lands ("eval stream ended without
-verdict" added to transient markers, OR the validator emits a
-different exception that does match), the xfail flips to pass and
-strict=True forces the marker to be removed.
+These tests pin the classifier's behaviour — comprehensive marker
+coverage plus xfail-strict regression tests for misclassifications
+production data confirms (primary) or theory predicts (secondary).
+When a fix lands, the relevant xfail flips to pass; strict=True forces
+removal of the marker.
 """
 import asyncio
 
@@ -153,30 +165,60 @@ def test_classifier_accepts_exception_input():
 
 # ---------------------------------------------------------------------
 # Bug demonstration — xfail-strict.
+#
+# Primary: production-confirmed misclassification. 6 of 61 eval_error
+# entries in the 2026-05-06 dashboard snapshot have this exact detail.
 
 @pytest.mark.xfail(
     strict=True,
-    reason="EVALUATION FAILED-misclassification bug "
-           "(Discord triage 2026-05-04, @iamyamal, @rapiiidooo). "
-           "validator.py raises RuntimeError('eval stream ended without "
-           "verdict') when the SSE stream closes without a final "
-           "verdict (eval-server restart, tunnel blip). The dashboard "
-           "renders this as 'This is likely transient -- your model will "
-           "be retried' (website/index.html:481), but "
-           "_is_transient_eval_error has no marker matching this text — "
-           "so the validator records a permanent failure and the model "
-           "lands in state.failed_repos. Fix is a separate plan; the "
-           "obvious option is to add 'stream ended without verdict' (or "
-           "'ended without verdict') to the transient markers tuple. "
-           "When the fix lands, this xfail flips to pass and strict=True "
-           "forces removal of the marker.",
+    reason="Production-confirmed misclassification: httpx.ConnectError "
+           "(when the eval-server's tunnel / DNS / TCP setup fails). "
+           "Its str() output is 'All connection attempts failed' — "
+           "no surrounding context, no error type name. The transient "
+           "markers tuple in validator._is_transient_eval_error includes "
+           "'connecterror' but that matches the EXCEPTION TYPE NAME, "
+           "never the str(). Production data shows 6/61 eval_error "
+           "entries (~10%) misclassified this way; affected models "
+           "land permanently in state.failed_repos when the underlying "
+           "issue is unambiguously a transient infrastructure failure. "
+           "Fix candidates (separate plan): add 'connection attempts "
+           "failed' to markers, OR check exc.__class__.__name__ "
+           "against a type-name set, OR catch httpx.ConnectError "
+           "explicitly in process_challenge.",
+)
+def test_all_connection_attempts_failed_should_be_transient():
+    # The exact str() that httpx.ConnectError produces when no TCP
+    # connection succeeds (DNS failure, all RR-records unreachable,
+    # tunnel down). Wrapped in RuntimeError because process_challenge's
+    # _bounded_eval re-raises whatever it caught.
+    # WANT: classified as transient → re-queue rather than permanent fail.
+    # GET today: classified as permanent (production bug).
+    is_transient, _reason = _is_transient_eval_error(
+        RuntimeError("All connection attempts failed"))
+    assert is_transient is True
+
+
+# Secondary: theoretical misclassification. NOT seen in the 2026-05-06
+# snapshot but the code path exists in validator.py and the dashboard
+# already renders this string with retry-promising text.
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Theoretical misclassification (no production occurrences "
+           "in the 2026-05-06 dashboard snapshot, but the code path "
+           "exists). validator.py around line 2174 raises "
+           "RuntimeError('eval stream ended without verdict') when the "
+           "SSE stream closes without a final verdict event. The "
+           "dashboard renders this exact string as "
+           "'This is likely transient -- your model will be retried' "
+           "(website/index.html:481), but _is_transient_eval_error has "
+           "no marker matching the text — so a model in this scenario "
+           "would land permanently. Less urgent than the connection-"
+           "attempts case but the same kind of dashboard/validator "
+           "promise mismatch. Fix candidate: add 'ended without verdict' "
+           "to markers.",
 )
 def test_eval_stream_ended_without_verdict_should_be_transient():
-    # The exact RuntimeError validator.py raises on a no-verdict stream
-    # close (validator.py around line 2174):
-    #     raise RuntimeError("eval stream ended without verdict")
-    # WANT: classified as transient → re-queue rather than permanent fail.
-    # GET today: classified as permanent (bug).
     is_transient, _reason = _is_transient_eval_error(
         RuntimeError("eval stream ended without verdict"))
     assert is_transient is True
