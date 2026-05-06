@@ -22,7 +22,9 @@ Test API for event injection:
   per-eval-id queue. Events are emitted in the order queued.
   Works for any `eval_id`, including a synthetic value the consumer
   never `POST /eval`-ed against — useful for tests that drive
-  `GET /stream` directly with a hand-picked id.
+  `GET /stream` directly with a hand-picked id. `type` and `data` are
+  passed through unvalidated; the harness wraps them as
+  `{"type": <type>, "data": <data>}` and JSON-encodes for the wire.
 * `set_busy(busy)` — toggle the 409-busy mode for `POST /eval`.
 
 Test API for inspection:
