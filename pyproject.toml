@@ -23,7 +23,20 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["ruff"]
-test = ["pytest>=8.0", "pytest-mock>=3.14", "pytest-asyncio>=0.24"]
+test = [
+    "pytest>=8.0",
+    "pytest-mock>=3.14",
+    "pytest-asyncio>=0.24",
+    # Runtime deps that test collection imports transitively but
+    # which are not declared in [project] dependencies. archs/quasar
+    # imports `fla` (flash-linear-attention) and eval/torch_runner
+    # imports `accelerate`. Listing them here keeps the test extra
+    # self-sufficient (`uv pip install -e ".[test]"` Just Works) without
+    # taking a position on whether they belong in core dependencies —
+    # that's an open upstream question.
+    "flash-linear-attention",
+    "accelerate",
+]
 
 [project.urls]
 Homepage = "https://teutonic.ai"
