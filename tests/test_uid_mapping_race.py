@@ -153,3 +153,36 @@ def test_dashboard_shows_correct_uid_when_uid_map_is_fresh(r2_mock):
     d_entries = [e for e in payload["queue"] if e["hotkey"] == "D"]
     assert len(d_entries) == 1
     assert d_entries[0]["uid"] == 3
+
+
+# ---------------------------------------------------------------------
+# Staleness consequence on coldkey-prefix gate.
+
+def test_expected_coldkey_prefix_is_none_during_staleness_window(r2_mock):
+    # Second consequence of the same bug: process_challenge's
+    # coldkey-prefix gate (validator.py around line 1925-1948) calls
+    # `state.expected_coldkey_prefix(hotkey)` which ultimately reads
+    # `state.hotkey_coldkey` — populated by the same refresh_uid_map
+    # call. During the staleness window, a fresh registration that
+    # already has a coldkey on chain is invisible to the gate, so
+    # the gate's "skip if not in metagraph yet" branch fires
+    # (validator.py logs "coldkey for X not in metagraph yet,
+    # skipping coldkey check"). The defence-in-depth check therefore
+    # does NOT run during this window — a separate visible
+    # consequence from the dashboard uid=None render.
+    #
+    # Requires FakeChain's coldkey kwarg (M1 feature beyond what
+    # the original _FakeSubtensor stub modelled).
+    s = State(r2_mock)
+    chain = FakeChain()
+    chain.register("A", uid=0, coldkey="ck_A_long_ss58_prefix")
+    s.refresh_uid_map(chain, netuid=3)
+
+    # D registers with a coldkey on chain AFTER the snapshot.
+    chain.register("D", uid=1, coldkey="ck_D_long_ss58_prefix")
+
+    # state.hotkey_coldkey doesn't include D yet → expected_coldkey_prefix
+    # returns None for D, regardless of D's on-chain coldkey.
+    assert s.expected_coldkey_prefix("D") is None
+    # Sanity: A is in the snapshot so its prefix resolves.
+    assert s.expected_coldkey_prefix("A") is not None
