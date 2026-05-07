@@ -91,8 +91,8 @@ What this gets you:
   the suite as `XPASS` until someone removes the marker
 - **As regression**: removed marker becomes a permanent green test
 
-Current xfail-strict tests: 4 (2 in `test_uid_mapping_race.py`, 2 in
-`test_eval_failed_misclassification.py`).
+Current xfail-strict tests: 5 (2 in `test_uid_mapping_race.py`, 2 in
+`test_eval_failed_misclassification.py`, 1 in `test_sha_swap_exploit.py`).
 
 ## Harness architecture
 
