@@ -75,7 +75,14 @@ async def test_fetch_tmc_data_happy_path_returns_dict(monkeypatch, fake_async_cl
         # /subnets/{NETUID}/
         _resp({"latest_snapshot": {
             "alpha_sqrt_price": "0.5",
-            "subnet_alpha_out_emission": 1_000_000_000,  # 1 alpha/block
+            "subnet_alpha_out_emission": 1_000_000_000,  # 1 alpha/block gross
+            # 26bf392 introduced miner-share scaling: gross_apb is split into
+            # server/validator/owner pots, and `sn3_alpha_per_block` exposes
+            # only the miner share. With server=1e9 and others=0 the split
+            # is 100% miners, so the exposed value matches the gross.
+            "pending_server_emission": 1_000_000_000,
+            "pending_validator_emission": 0,
+            "pending_owner_cut": 0,
         }}),
         # /subnets/burn/{NETUID}/
         _resp([{"burn": 5_000_000_000}]),  # 5 tao
@@ -86,7 +93,9 @@ async def test_fetch_tmc_data_happy_path_returns_dict(monkeypatch, fake_async_cl
     assert result["sn3_alpha_price_tao"] == pytest.approx(0.25)  # 0.5**2
     assert result["sn3_alpha_price_usd"] == pytest.approx(1.25)  # 0.25 * 5.0
     assert result["sn3_reg_burn_tao"] == pytest.approx(5.0)  # 5e9 / 1e9
-    assert result["sn3_alpha_per_block"] == pytest.approx(1.0)  # 1e9 / 1e9
+    assert result["sn3_alpha_per_block"] == pytest.approx(1.0)  # 1e9 * 1.0 share / 1e9
+    assert result["sn3_miner_share"] == pytest.approx(1.0)
+    assert result["sn3_alpha_per_block_gross"] == pytest.approx(1.0)
 
 
 async def test_fetch_tmc_data_returns_none_on_http_error(monkeypatch, fake_async_client):
@@ -140,7 +149,7 @@ async def test_notify_new_king_posts_embed_with_repo_and_hotkey(monkeypatch, fak
     monkeypatch.setattr(validator, "DISCORD_CHANNEL_ID", "12345")
     fake_async_client.post.return_value = _resp({}, status_code=200)
     await validator.notify_new_king({
-        "hf_repo": "alice/Teutonic-XXIV-king",
+        "hf_repo": "alice/Teutonic-LXXX-king",
         "hotkey": "5HhKL...",
         "reign_number": 7,
         "king_revision": "abcdef0123456789",
@@ -151,7 +160,7 @@ async def test_notify_new_king_posts_embed_with_repo_and_hotkey(monkeypatch, fak
     embed_text = body["embeds"][0]["description"]
     # The repo, hotkey prefix, reign, and revision-prefix must all
     # appear somewhere in the embed body (formatting may evolve).
-    assert "alice/Teutonic-XXIV-king" in embed_text
+    assert "alice/Teutonic-LXXX-king" in embed_text
     assert "5HhKL" in embed_text
     assert "7" in embed_text
     assert "abcdef012345" in embed_text
@@ -164,7 +173,7 @@ async def test_notify_new_king_includes_eval_metrics_when_verdict_provided(
     monkeypatch.setattr(validator, "DISCORD_CHANNEL_ID", "12345")
     fake_async_client.post.return_value = _resp({}, status_code=200)
     await validator.notify_new_king(
-        {"hf_repo": "alice/Teutonic-XXIV-king", "hotkey": "5h"},
+        {"hf_repo": "alice/Teutonic-LXXX-king", "hotkey": "5h"},
         verdict={"mu_hat": 0.0123, "avg_king_loss": 2.5,
                  "avg_challenger_loss": 2.4, "wall_time_s": 312.0},
     )
@@ -225,16 +234,16 @@ async def test_notify_dethroned_posts_embed_with_dead_repo_and_verdict(
     monkeypatch.setattr(validator, "DISCORD_CHANNEL_ID", "12345")
     fake_async_client.post.return_value = _resp({}, status_code=200)
     await validator.notify_king_dethroned_untrainable(
-        "alice/Teutonic-XXIV-old",
-        {"hf_repo": "bob/Teutonic-XXIV-rev", "king_revision": "rev123abc"},
+        "alice/Teutonic-LXXX-old",
+        {"hf_repo": "bob/Teutonic-LXXX-rev", "king_revision": "rev123abc"},
         {"reason": "norm_quant_high",
          "max_ratio": 1.5, "max_grad_norm": 999.0,
          "norm_quantization": 0.95},
     )
     body = fake_async_client.post.call_args.kwargs["json"]
     embed_text = body["embeds"][0]["description"]
-    assert "alice/Teutonic-XXIV-old" in embed_text
-    assert "bob/Teutonic-XXIV-rev" in embed_text
+    assert "alice/Teutonic-LXXX-old" in embed_text
+    assert "bob/Teutonic-LXXX-rev" in embed_text
     assert "norm_quant_high" in embed_text
 
 

@@ -60,7 +60,7 @@ def state(r2_mock):
     return validator.State(r2_mock)
 
 
-def _entry(*, hotkey="hk_chal", hf_repo="bob/Teutonic-XXIV-chall",
+def _entry(*, hotkey="hk_chal", hf_repo="bob/Teutonic-LXXX-chall",
            challenge_id="ch1", king_hash=""):
     return {
         "challenge_id": challenge_id,
@@ -75,13 +75,13 @@ def _entry(*, hotkey="hk_chal", hf_repo="bob/Teutonic-XXIV-chall",
 # Gate 1: King-hotkey skip.
 
 async def test_gate_skips_when_challenger_is_current_king(state):
-    state.set_king("hk_king", "alice/Teutonic-XXIV-king", "kh", 100)
-    entry = _entry(hotkey="hk_king", hf_repo="alice/Teutonic-XXIV-king")
+    state.set_king("hk_king", "alice/Teutonic-LXXX-king", "kh", 100)
+    entry = _entry(hotkey="hk_king", hf_repo="alice/Teutonic-LXXX-king")
     # If gate 1 fires, returns silently (no recorded failure, no event).
     await validator.process_challenge(state, state.r2, entry,
                                        subtensor=None, wallet=None)
     # Sanity: nothing in failed_repos, no error in history.
-    assert "alice/Teutonic-XXIV-king" not in state.failed_repos
+    assert "alice/Teutonic-LXXX-king" not in state.failed_repos
     error_records = [h for h in state.history if h.get("verdict") == "error"]
     assert error_records == []
 
@@ -89,7 +89,7 @@ async def test_gate_skips_when_challenger_is_current_king(state):
 async def test_gate_processes_normal_challenger_when_king_set(state):
     # Counter-example: a DIFFERENT hotkey reaches gate 4+ → eventually
     # hits the HfApi mock and _NotReached fires.
-    state.set_king("hk_king", "alice/Teutonic-XXIV-king", "kh", 100)
+    state.set_king("hk_king", "alice/Teutonic-LXXX-king", "kh", 100)
     state.hotkey_coldkey = {"hk_chal": "ck_chal"}  # so gate 4 doesn't skip
     entry = _entry(hotkey="hk_chal", hf_repo="bob/ck_chal-XXIV-chall")
     with pytest.raises(_NotReached):
@@ -101,7 +101,7 @@ async def test_gate_processes_normal_challenger_when_king_set(state):
 # Gate 2: failed_repos skip.
 
 async def test_gate_skips_when_repo_in_failed_repos(state):
-    state.failed_repos.add("bob/Teutonic-XXIV-chall")
+    state.failed_repos.add("bob/Teutonic-LXXX-chall")
     entry = _entry()
     await validator.process_challenge(state, state.r2, entry,
                                        subtensor=None, wallet=None)
@@ -113,12 +113,12 @@ async def test_gate_skips_when_repo_in_failed_repos(state):
 # Gate 3: evaluated_repos skip.
 
 async def test_gate_skips_when_repo_in_evaluated_repos(state):
-    state.evaluated_repos.add("bob/Teutonic-XXIV-chall")
+    state.evaluated_repos.add("bob/Teutonic-LXXX-chall")
     entry = _entry()
     await validator.process_challenge(state, state.r2, entry,
                                        subtensor=None, wallet=None)
     # No-op skip — neither failed_repos nor history is touched.
-    assert "bob/Teutonic-XXIV-chall" not in state.failed_repos
+    assert "bob/Teutonic-LXXX-chall" not in state.failed_repos
 
 
 # ---------------------------------------------------------------------
@@ -127,11 +127,11 @@ async def test_gate_skips_when_repo_in_evaluated_repos(state):
 async def test_gate_rejects_when_repo_missing_coldkey_prefix(state):
     # state knows hotkey's coldkey, repo doesn't contain prefix → reject.
     state.hotkey_coldkey = {"hk_chal": "5HhKLLong_coldkey_ss58_addr"}
-    entry = _entry(hf_repo="bob/Teutonic-XXIV-no-prefix-here")
+    entry = _entry(hf_repo="bob/Teutonic-LXXX-no-prefix-here")
     await validator.process_challenge(state, state.r2, entry,
                                        subtensor=None, wallet=None)
     # Repo lands in failed_repos with coldkey_required error code.
-    assert "bob/Teutonic-XXIV-no-prefix-here" in state.failed_repos
+    assert "bob/Teutonic-LXXX-no-prefix-here" in state.failed_repos
     assert any(h.get("error_code") == "coldkey_required"
                for h in state.history)
 
@@ -141,7 +141,7 @@ async def test_gate_accepts_repo_with_coldkey_prefix_in_owner(state):
     state.hotkey_coldkey = {"hk_chal": "5HhKLLongkey"}
     # COLDKEY_PREFIX_LEN defaults to 8, so first 8 = "5HhKLLon".
     # Lowercased it's "5hhkllon" (NB: two l's). Repo owner contains it.
-    entry = _entry(hf_repo="5hhkllon-models/Teutonic-XXIV-x")
+    entry = _entry(hf_repo="5hhkllon-models/Teutonic-LXXX-x")
     with pytest.raises(_NotReached):
         await validator.process_challenge(state, state.r2, entry,
                                            subtensor=None, wallet=None)
@@ -149,7 +149,7 @@ async def test_gate_accepts_repo_with_coldkey_prefix_in_owner(state):
 
 async def test_gate_accepts_repo_with_coldkey_prefix_in_basename(state):
     state.hotkey_coldkey = {"hk_chal": "5HhKLLong_coldkey"}
-    entry = _entry(hf_repo="bob/Teutonic-XXIV-5hhkllon-v1")
+    entry = _entry(hf_repo="bob/Teutonic-LXXX-5hhkllon-v1")
     with pytest.raises(_NotReached):
         await validator.process_challenge(state, state.r2, entry,
                                            subtensor=None, wallet=None)
@@ -166,27 +166,38 @@ async def test_gate_skips_coldkey_check_when_metagraph_stale(state):
 
 
 # ---------------------------------------------------------------------
-# Gate 5: stale-king check (only when check_stale=True).
+# Gate 5 (REMOVED by 26bf392): the stale-king-hash check.
+#
+# Pre-26bf392 behaviour: an entry whose king_hash didn't match the
+# current king's was silently dropped (assumed to be a re-eval against
+# a since-dethroned king).
+#
+# Post-26bf392 behaviour: gate 5 is gone. The bootstrap test compares
+# to the *current* king regardless of which king the challenger
+# originally targeted — a stale-king-hash entry that beats the new king
+# is a valid coronation. The `check_stale` parameter is retained as a
+# no-op for backward CLI compat.
 
-async def test_gate_skips_stale_entry(state):
-    # Entry's king_hash doesn't match current king → return as stale.
-    state.set_king("hk_king", "alice/Teutonic-XXIV-king",
+async def test_stale_entry_is_processed_after_gate_5_removal(state):
+    # 26bf392 removed the stale-king-hash gate; entries are no longer
+    # skipped on king_hash mismatch. They now fall through to HfApi.
+    state.set_king("hk_king", "alice/Teutonic-LXXX-king",
                    "current_kh_long", 100)
     state.hotkey_coldkey = {"hk_chal": "ck_chal"}
-    entry = _entry(hf_repo="bob/Teutonic-XXIV-ck_chal-x",
+    entry = _entry(hf_repo="bob/Teutonic-LXXX-ck_chal-x",
                    king_hash="stale_kh")
-    await validator.process_challenge(state, state.r2, entry,
-                                       subtensor=None, wallet=None,
-                                       check_stale=True)
-    # No failure recorded — stale entries are silently dropped.
-    assert "bob/Teutonic-XXIV-ck_chal-x" not in state.failed_repos
+    with pytest.raises(_NotReached):
+        await validator.process_challenge(state, state.r2, entry,
+                                           subtensor=None, wallet=None,
+                                           check_stale=True)
 
 
-async def test_gate_does_not_skip_stale_when_check_stale_false(state):
-    # check_stale=False bypasses gate 5 → falls through to HfApi.
+async def test_check_stale_false_still_falls_through_to_hf_api(state):
+    # check_stale=False has always reached HfApi; preserved as
+    # contract test for the no-op parameter.
     state.set_king("hk_king", "alice/king", "current_kh", 100)
     state.hotkey_coldkey = {"hk_chal": "ck_chal"}
-    entry = _entry(hf_repo="bob/Teutonic-XXIV-ck_chal-x",
+    entry = _entry(hf_repo="bob/Teutonic-LXXX-ck_chal-x",
                    king_hash="stale_kh")
     with pytest.raises(_NotReached):
         await validator.process_challenge(state, state.r2, entry,
@@ -199,7 +210,7 @@ async def test_gate_does_not_skip_when_entry_king_hash_matches_prefix(state):
     # truncation in old payloads). Identical hashes pass through.
     state.set_king("hk_king", "alice/king", "kh_full_abc123", 100)
     state.hotkey_coldkey = {"hk_chal": "ck_chal"}
-    entry = _entry(hf_repo="bob/Teutonic-XXIV-ck_chal-x",
+    entry = _entry(hf_repo="bob/Teutonic-LXXX-ck_chal-x",
                    king_hash="kh_full_abc")  # prefix match
     with pytest.raises(_NotReached):
         await validator.process_challenge(state, state.r2, entry,
@@ -211,7 +222,7 @@ async def test_gate_does_not_skip_when_either_hash_empty(state):
     # `if current_hash and entry_king_hash` short-circuits → no skip.
     state.set_king("hk_king", "alice/king", "current_kh", 100)
     state.hotkey_coldkey = {"hk_chal": "ck_chal"}
-    entry = _entry(hf_repo="bob/Teutonic-XXIV-ck_chal-x", king_hash="")
+    entry = _entry(hf_repo="bob/Teutonic-LXXX-ck_chal-x", king_hash="")
     with pytest.raises(_NotReached):
         await validator.process_challenge(state, state.r2, entry,
                                            subtensor=None, wallet=None)

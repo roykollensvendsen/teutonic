@@ -60,13 +60,13 @@ async def test_chain_reveal_to_eval_verdict_flow_uses_all_three_harnesses(
     chain.register("hk_king", uid=0, coldkey="ck_king")
     chain.register("hk_chal", uid=1, coldkey="ck_chal_long_ss58")
     chain.commit_reveal("hk_chal",
-                        "kh_seed:bob/Teutonic-XXIV-chall:mh_chal",
+                        "kh_seed:bob/Teutonic-LXXX-chall:mh_chal",
                         block=100)
 
     # State with king already crowned (so enqueue won't reject the
     # challenger as the king's own reveal).
     state = State(r2_mock)
-    state.set_king("hk_king", "alice/Teutonic-XXIV-king",
+    state.set_king("hk_king", "alice/Teutonic-LXXX-king",
                    "kh_seed", block=90, challenge_id="seed",
                    king_revision="rev_king")
 
@@ -141,6 +141,6 @@ async def test_chain_reveal_to_eval_verdict_flow_uses_all_three_harnesses(
     assert len(eval_server.posted_evals) == 1
     posted = eval_server.posted_evals[0]
     assert posted["eval_id"] == eval_id
-    assert posted["request"]["king_repo"] == "alice/Teutonic-XXIV-king"
-    assert posted["request"]["challenger_repo"] == "bob/Teutonic-XXIV-chall"
+    assert posted["request"]["king_repo"] == "alice/Teutonic-LXXX-king"
+    assert posted["request"]["challenger_repo"] == "bob/Teutonic-LXXX-chall"
     assert posted["request"]["hotkey"] == "hk_chal"

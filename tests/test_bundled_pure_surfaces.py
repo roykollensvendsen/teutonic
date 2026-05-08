@@ -86,25 +86,25 @@ def test_math_isfinite_handles_numpy_floats():
     assert not math_isfinite(np.float64("nan"))
 
 
-# `REPO_PATTERN` — regex r"^[^/]+/Teutonic-XXIV-.+$"
-# Validates HF repo names: <user>/Teutonic-XXIV-<anything>
+# `REPO_PATTERN` — regex r"^[^/]+/Teutonic-LXXX-.+$"
+# Validates HF repo names: <user>/Teutonic-LXXX-<anything>
 # Compiled into _REPO_RE at module load.
 
 @pytest.mark.parametrize("repo", [
-    "user1/Teutonic-XXIV-abc",
-    "miner/Teutonic-XXIV-v2-roy",
-    "org-with-dash/Teutonic-XXIV-1",
+    "user1/Teutonic-LXXX-abc",
+    "miner/Teutonic-LXXX-v2-roy",
+    "org-with-dash/Teutonic-LXXX-1",
 ])
 def test_repo_pattern_accepts_valid_names(repo):
     assert _REPO_RE.match(repo) is not None
 
 
 @pytest.mark.parametrize("repo", [
-    "Teutonic-XXIV-abc",                  # missing user/
+    "Teutonic-LXXX-abc",                  # missing user/
     "user/Teutonic-XXIII-abc",            # wrong version
-    "user/Teutonic-XXIV-",                # empty suffix
-    "user/RandomRepo",                    # not Teutonic-XXIV
-    "user/sub/Teutonic-XXIV-abc",         # extra slash
+    "user/Teutonic-LXXX-",                # empty suffix
+    "user/RandomRepo",                    # not Teutonic-LXXX
+    "user/sub/Teutonic-LXXX-abc",         # extra slash
     "",
 ])
 def test_repo_pattern_rejects_invalid_names(repo):
@@ -115,7 +115,7 @@ def test_repo_pattern_constant_matches_compiled_regex():
     # _REPO_RE is just re.compile(REPO_PATTERN); verify they agree.
     import re
     direct = re.compile(REPO_PATTERN)
-    sample = "user/Teutonic-XXIV-test"
+    sample = "user/Teutonic-LXXX-test"
     assert (direct.match(sample) is not None) == (_REPO_RE.match(sample) is not None)
 
 
