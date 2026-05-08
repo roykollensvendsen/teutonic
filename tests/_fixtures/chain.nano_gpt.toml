@@ -1,0 +1,35 @@
+# Test/devnet chain config that points at the nano-gpt arch.
+#
+# Used by:
+#   - tests/test_archs_nano_gpt.py and any other arch_specific(archs.nano_gpt)
+#     tests in the future, via TEUTONIC_CHAIN_OVERRIDE.
+#   - The local devnet runbook (playground/) — point validator/eval-server
+#     at this fixture when bringing up a localhost subtensor with toy models.
+#
+# Genesis seed repo here is intentionally fictional ("playground/Teutonic-Nano-mock-king");
+# bring up the seed with `python -m archs.nano_gpt.seed --push --repo <real-repo>`
+# and adjust seed_repo to match before launching the validator.
+#
+# extra_lock_keys: GPT2Config doesn't share key names with the validator's
+# Qwen3-style _generic_lock (n_embd vs hidden_size, n_layer vs num_hidden_layers,
+# etc.), so structural matching has to be done via explicit GPT2-side keys here.
+# Without these, a challenger could ship a 12-layer GPT-2 against a 4-layer
+# king and slip past dim-matching.
+
+[chain]
+name = "Teutonic-Nano"
+seed_repo = "playground/Teutonic-Nano-mock-king"
+
+[arch]
+module = "archs.nano_gpt"
+extra_lock_keys = [
+    "n_embd",
+    "n_layer",
+    "n_head",
+    "n_positions",
+    "n_inner",
+    "activation_function",
+]
+
+[seed]
+tokenizer_repo = "gpt2"
