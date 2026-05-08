@@ -30,7 +30,7 @@ def _reset_endpoint_state(monkeypatch):
                         {"disk_total_gb": 1000.0, "disk_used_gb": 200.0})
     monkeypatch.setattr(eval_server, "_disk_stats_thread_started", True)
     monkeypatch.setattr(eval_server, "_gpu_ids", [0, 1])
-    monkeypatch.setattr(eval_server, "_king_repo", "alice/Teutonic-XXIV-king")
+    monkeypatch.setattr(eval_server, "_king_repo", "alice/Teutonic-LXXX-king")
     # Reset _eval_lock so each test starts unlocked.
     if eval_server._eval_lock.locked():
         with contextlib.suppress(RuntimeError):
@@ -71,8 +71,8 @@ async def client():
 
 
 _MIN_EVAL_REQUEST = {
-    "king_repo": "alice/Teutonic-XXIV-king",
-    "challenger_repo": "bob/Teutonic-XXIV-chall",
+    "king_repo": "alice/Teutonic-LXXX-king",
+    "challenger_repo": "bob/Teutonic-LXXX-chall",
     "block_hash": "0xabc",
     "hotkey": "hk_bob",
     "shard_key": "shards/0.npy",
@@ -90,7 +90,7 @@ async def test_health_returns_ok_when_not_self_killing(client):
     assert body["self_kill_scheduled"] is False
     assert body["gpus"] == 2
     assert body["gpu_ids"] == [0, 1]
-    assert body["king_loaded"] == "alice/Teutonic-XXIV-king"
+    assert body["king_loaded"] == "alice/Teutonic-LXXX-king"
 
 
 async def test_health_returns_exiting_when_self_kill_scheduled(client):
@@ -159,7 +159,7 @@ async def test_post_eval_creates_record_with_pending_state(client, fake_threads)
     assert record["verdict"] is None
     assert record["error"] is None
     assert isinstance(record["events"], Queue)
-    assert record["request"]["king_repo"] == "alice/Teutonic-XXIV-king"
+    assert record["request"]["king_repo"] == "alice/Teutonic-LXXX-king"
 
 
 async def test_post_eval_spawns_run_eval_and_watchdog_threads(

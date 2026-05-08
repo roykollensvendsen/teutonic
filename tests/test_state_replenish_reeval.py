@@ -19,7 +19,7 @@ from tests._harness.chain import FakeChain
 from validator import State
 
 
-def _payload(repo: str = "alice/Teutonic-XXIV-x") -> str:
+def _payload(repo: str = "alice/Teutonic-LXXX-x") -> str:
     """scan_reveals expects 'king_hash:hf_repo:model_hash'."""
     return f"kh:{repo}:mh"
 
@@ -51,9 +51,9 @@ def test_replenish_reeval_enqueues_all_reveals(r2_mock):
     s = State(r2_mock)
     chain = FakeChain(block=100)
     chain.commit_reveal("hk_a",
-                        _payload("alice/Teutonic-XXIV-A"), block=100)
+                        _payload("alice/Teutonic-LXXX-A"), block=100)
     chain.commit_reveal("hk_b",
-                        _payload("bob/Teutonic-XXIV-B"), block=100)
+                        _payload("bob/Teutonic-LXXX-B"), block=100)
     count = s.replenish_reeval(chain, netuid=3)
     assert count == 2
     assert len(s.queue) == 2
@@ -66,7 +66,7 @@ def test_replenish_reeval_returned_count_matches_enqueued(r2_mock):
     chain = FakeChain(block=100)
     for n in range(5):
         chain.commit_reveal(f"hk_{n}",
-                            _payload(f"miner_{n}/Teutonic-XXIV-x"),
+                            _payload(f"miner_{n}/Teutonic-LXXX-x"),
                             block=100)
     count = s.replenish_reeval(chain, netuid=3)
     assert count == 5
@@ -78,12 +78,12 @@ def test_replenish_reeval_returned_count_matches_enqueued(r2_mock):
 
 def test_replenish_reeval_drops_king_hotkeys_reveal(r2_mock):
     s = State(r2_mock)
-    s.set_king("hk_king", "alice/Teutonic-XXIV-king", "kh", 100)
+    s.set_king("hk_king", "alice/Teutonic-LXXX-king", "kh", 100)
     chain = FakeChain(block=100)
     chain.commit_reveal("hk_king",
-                        _payload("alice/Teutonic-XXIV-king"), block=100)
+                        _payload("alice/Teutonic-LXXX-king"), block=100)
     chain.commit_reveal("hk_other",
-                        _payload("bob/Teutonic-XXIV-x"), block=100)
+                        _payload("bob/Teutonic-LXXX-x"), block=100)
     count = s.replenish_reeval(chain, netuid=3)
     assert count == 1
     assert s.queue[0]["hotkey"] == "hk_other"
@@ -94,15 +94,15 @@ def test_replenish_reeval_drops_king_hotkeys_reveal(r2_mock):
 
 def test_replenish_reeval_drops_failed_repos(r2_mock):
     s = State(r2_mock)
-    s.failed_repos = {"alice/Teutonic-XXIV-bad"}
+    s.failed_repos = {"alice/Teutonic-LXXX-bad"}
     chain = FakeChain(block=100)
     chain.commit_reveal("hk_a",
-                        _payload("alice/Teutonic-XXIV-bad"), block=100)
+                        _payload("alice/Teutonic-LXXX-bad"), block=100)
     chain.commit_reveal("hk_b",
-                        _payload("bob/Teutonic-XXIV-good"), block=100)
+                        _payload("bob/Teutonic-LXXX-good"), block=100)
     count = s.replenish_reeval(chain, netuid=3)
     assert count == 1
-    assert s.queue[0]["hf_repo"] == "bob/Teutonic-XXIV-good"
+    assert s.queue[0]["hf_repo"] == "bob/Teutonic-LXXX-good"
 
 
 # ---------------------------------------------------------------------
@@ -112,7 +112,7 @@ def test_replenish_reeval_emits_event_when_anything_enqueued(r2_mock):
     s = State(r2_mock)
     chain = FakeChain(block=100)
     chain.commit_reveal("hk_a",
-                        _payload("alice/Teutonic-XXIV-x"), block=100)
+                        _payload("alice/Teutonic-LXXX-x"), block=100)
     s.replenish_reeval(chain, netuid=3)
     # The "replenish_reeval" event lands in state/history.jsonl.
     appended = r2_mock._appended.get("state/history.jsonl", [])
@@ -142,7 +142,7 @@ def test_replenish_reeval_returns_revealed_repos_even_when_seen(r2_mock):
     s.seen = {"hk_a"}
     chain = FakeChain(block=100)
     chain.commit_reveal("hk_a",
-                        _payload("alice/Teutonic-XXIV-x"), block=100)
+                        _payload("alice/Teutonic-LXXX-x"), block=100)
     count = s.replenish_reeval(chain, netuid=3)
     assert count == 1
 
@@ -154,7 +154,7 @@ def test_replenish_reeval_consistent_across_calls(r2_mock):
     s = State(r2_mock)
     chain = FakeChain(block=100)
     chain.commit_reveal("hk_a",
-                        _payload("alice/Teutonic-XXIV-A"), block=100)
+                        _payload("alice/Teutonic-LXXX-A"), block=100)
     first = s.replenish_reeval(chain, netuid=3)
     # First call enqueues 1. Second call: enqueue would dedup against
     # the queue (enqueue checks "repo already queued"), so count=0.
