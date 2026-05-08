@@ -10,11 +10,12 @@ the behavior validator code will see when wired against this harness.
 """
 import json
 
+from tests._chain import repo
 from tests._harness.eval_server import FakeEvalServer
 
 _MIN_EVAL_REQUEST = {
-    "king_repo": "alice/Teutonic-LXXX-king",
-    "challenger_repo": "bob/Teutonic-LXXX-chall",
+    "king_repo": repo("alice", "king"),
+    "challenger_repo": repo("bob", "chall"),
     "block_hash": "0xabc",
     "hotkey": "hk_bob",
     "shard_key": "shards/0.npy",

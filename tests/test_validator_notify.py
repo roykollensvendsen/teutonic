@@ -16,6 +16,7 @@ that records `.get` / `.post` calls.
 import pytest
 
 import validator
+from tests._chain import repo
 
 # ---------------------------------------------------------------------
 # Shared httpx mock: returns a client that supports `async with` and
@@ -148,8 +149,9 @@ async def test_notify_new_king_posts_embed_with_repo_and_hotkey(monkeypatch, fak
     monkeypatch.setattr(validator, "DISCORD_BOT_TOKEN", "tok")
     monkeypatch.setattr(validator, "DISCORD_CHANNEL_ID", "12345")
     fake_async_client.post.return_value = _resp({}, status_code=200)
+    king_repo = repo("alice", "king")
     await validator.notify_new_king({
-        "hf_repo": "alice/Teutonic-LXXX-king",
+        "hf_repo": king_repo,
         "hotkey": "5HhKL...",
         "reign_number": 7,
         "king_revision": "abcdef0123456789",
@@ -160,7 +162,7 @@ async def test_notify_new_king_posts_embed_with_repo_and_hotkey(monkeypatch, fak
     embed_text = body["embeds"][0]["description"]
     # The repo, hotkey prefix, reign, and revision-prefix must all
     # appear somewhere in the embed body (formatting may evolve).
-    assert "alice/Teutonic-LXXX-king" in embed_text
+    assert king_repo in embed_text
     assert "5HhKL" in embed_text
     assert "7" in embed_text
     assert "abcdef012345" in embed_text
@@ -173,7 +175,7 @@ async def test_notify_new_king_includes_eval_metrics_when_verdict_provided(
     monkeypatch.setattr(validator, "DISCORD_CHANNEL_ID", "12345")
     fake_async_client.post.return_value = _resp({}, status_code=200)
     await validator.notify_new_king(
-        {"hf_repo": "alice/Teutonic-LXXX-king", "hotkey": "5h"},
+        {"hf_repo": repo("alice", "king"), "hotkey": "5h"},
         verdict={"mu_hat": 0.0123, "avg_king_loss": 2.5,
                  "avg_challenger_loss": 2.4, "wall_time_s": 312.0},
     )
@@ -233,17 +235,19 @@ async def test_notify_dethroned_posts_embed_with_dead_repo_and_verdict(
     monkeypatch.setattr(validator, "DISCORD_BOT_TOKEN", "tok")
     monkeypatch.setattr(validator, "DISCORD_CHANNEL_ID", "12345")
     fake_async_client.post.return_value = _resp({}, status_code=200)
+    old_repo = repo("alice", "old")
+    new_repo = repo("bob", "rev")
     await validator.notify_king_dethroned_untrainable(
-        "alice/Teutonic-LXXX-old",
-        {"hf_repo": "bob/Teutonic-LXXX-rev", "king_revision": "rev123abc"},
+        old_repo,
+        {"hf_repo": new_repo, "king_revision": "rev123abc"},
         {"reason": "norm_quant_high",
          "max_ratio": 1.5, "max_grad_norm": 999.0,
          "norm_quantization": 0.95},
     )
     body = fake_async_client.post.call_args.kwargs["json"]
     embed_text = body["embeds"][0]["description"]
-    assert "alice/Teutonic-LXXX-old" in embed_text
-    assert "bob/Teutonic-LXXX-rev" in embed_text
+    assert old_repo in embed_text
+    assert new_repo in embed_text
     assert "norm_quant_high" in embed_text
 
 
