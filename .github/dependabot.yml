@@ -1,0 +1,25 @@
+# Dependabot config for teutonic.
+#
+# Keeps GitHub Actions versions current. Without this, the workflow
+# sat on Node.js 20 deprecation warnings for months until 44f7069
+# (ops: bump GitHub Actions to current majors) cleaned them up by
+# hand. Weekly cadence is enough — actions don't move that fast,
+# and grouped updates keep PR noise low.
+#
+# Deliberately scoped to github-actions only. The pip ecosystem is
+# tied to upstream teutonic (transformers/torch/fla pinning is an
+# unsettled question — see upstream issue #4) and must not be
+# auto-bumped on this fork.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ops"
