@@ -62,3 +62,24 @@ Format:
   reply is malformed (200 without `sha256`) or any non-200/404 HTTP
   status."
 * **Touched by:** `tests/test_validator_seed_king_hash.py` (M32)
+
+
+### eval_server.py:331 — `_evict_for_challenger`
+
+* **Gap:** Docstring describes intent ("force-evict every cached repo
+  that's NOT the king and NOT the challenger we're about to load") and
+  the why ("disk-pressure backstop"), but does NOT mention:
+  * the function is non-fatal — it wraps everything in
+    `try/except Exception: log.warning(...)` so a scan or delete
+    failure does not propagate into the caller (`_load_challenger`,
+    on the eval dispatch path).
+  * `_king_repo=None` and `_king_repo=""` are both treated as "no king
+    yet" — `kept_repos.discard()` calls handle both.
+* **Observed:** `try/except Exception` wraps the body; explicit
+  `kept_repos.discard(None)` and `kept_repos.discard("")` after
+  `kept_repos = {_king_repo, target_repo}`.
+* **Suggested:** docstring → add "Non-fatal: scan or delete errors
+  are logged at WARNING and swallowed so the dispatch loop does not
+  stall. `_king_repo=None`/`""` (no king crowned yet) is treated as
+  'protect target only'."
+* **Touched by:** `tests/test_eval_server_cleanup_hf_cache.py` (M33)
