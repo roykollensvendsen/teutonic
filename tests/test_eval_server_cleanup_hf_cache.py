@@ -268,3 +268,135 @@ def test_cleanup_stops_deleting_once_under_70pct_threshold(
     eval_server._cleanup_hf_cache()
     # Oldest two deleted, newest two kept.
     assert set(cache._deleted) == {"h1", "h2"}
+
+
+# ---------------------------------------------------------------------
+# `_evict_for_challenger(target_repo)` — disk-pressure backstop.
+#
+# Contract (eval_server.py:331): force-evict every cached repo that's
+# NOT the king and NOT the challenger we're about to load. Called
+# BEFORE downloading a new challenger to guarantee headroom on disks
+# where `_cleanup_hf_cache`'s watermark check leaves a stale just-
+# evaluated challenger pinned (the "most recent preload" gets self-
+# protected).
+#
+# Wraps everything in `try/except Exception` and logs warning — must
+# never raise into the caller (the dispatch loop). See SPEC_DEBT.md
+# for the docstring gap on this last point.
+
+def test_evict_force_evicts_non_king_non_target(
+    fake_scan_cache_dir, monkeypatch,
+):
+    monkeypatch.setattr(eval_server, "_king_repo", "alice/king")
+    cache = _cache_info([
+        _repo("alice/king", [_rev("h_king", size_gb=80, last_modified=100)]),
+        _repo("bob/target", [_rev("h_target", size_gb=80, last_modified=200)]),
+        _repo("carol/old", [_rev("h_carol", size_gb=80, last_modified=50)]),
+        _repo("dave/older", [_rev("h_dave", size_gb=80, last_modified=10)]),
+    ])
+    fake_scan_cache_dir(cache)
+    eval_server._evict_for_challenger("bob/target")
+    # King + target preserved; everyone else evicted.
+    assert set(cache._deleted) == {"h_carol", "h_dave"}
+
+
+def test_evict_preserves_target_when_only_king_else_in_cache(
+    fake_scan_cache_dir, monkeypatch,
+):
+    monkeypatch.setattr(eval_server, "_king_repo", "alice/king")
+    cache = _cache_info([
+        _repo("alice/king", [_rev("h_king", size_gb=80, last_modified=100)]),
+        _repo("bob/target", [_rev("h_target", size_gb=80, last_modified=200)]),
+    ])
+    fake_scan_cache_dir(cache)
+    eval_server._evict_for_challenger("bob/target")
+    # No third party — nothing to evict.
+    assert cache._deleted == []
+
+
+def test_evict_no_op_when_cache_empty(fake_scan_cache_dir, monkeypatch):
+    monkeypatch.setattr(eval_server, "_king_repo", "alice/king")
+    cache = _cache_info([])
+    fake_scan_cache_dir(cache)
+    eval_server._evict_for_challenger("bob/target")
+    assert cache._deleted == []
+
+
+def test_evict_handles_king_repo_none(fake_scan_cache_dir, monkeypatch):
+    # Module starts with _king_repo = None (no king crowned yet).
+    # kept_repos must discard None — tested via leaving the autouse
+    # fixture's default in place.
+    cache = _cache_info([
+        _repo("bob/target", [_rev("h_target", size_gb=80, last_modified=200)]),
+        _repo("carol/old", [_rev("h_carol", size_gb=80, last_modified=50)]),
+    ])
+    fake_scan_cache_dir(cache)
+    # _king_repo is None — only target is preserved.
+    eval_server._evict_for_challenger("bob/target")
+    assert set(cache._deleted) == {"h_carol"}
+
+
+def test_evict_handles_king_repo_empty_string(
+    fake_scan_cache_dir, monkeypatch,
+):
+    # Same logic as None — kept_repos.discard("") catches it.
+    monkeypatch.setattr(eval_server, "_king_repo", "")
+    cache = _cache_info([
+        _repo("bob/target", [_rev("h_target", size_gb=80, last_modified=200)]),
+        _repo("carol/old", [_rev("h_carol", size_gb=80, last_modified=50)]),
+    ])
+    fake_scan_cache_dir(cache)
+    eval_server._evict_for_challenger("bob/target")
+    assert set(cache._deleted) == {"h_carol"}
+
+
+def test_evict_evicts_multiple_revisions_of_same_repo(
+    fake_scan_cache_dir, monkeypatch,
+):
+    # A non-protected repo with multiple cached revisions: ALL of its
+    # revisions are evicted (not just the oldest — this is the
+    # backstop, not the watermark-targeted cleanup).
+    monkeypatch.setattr(eval_server, "_king_repo", "alice/king")
+    cache = _cache_info([
+        _repo("alice/king", [_rev("h_king", size_gb=80, last_modified=100)]),
+        _repo("carol/three-revs", [
+            _rev("h_c1", size_gb=80, last_modified=10),
+            _rev("h_c2", size_gb=80, last_modified=20),
+            _rev("h_c3", size_gb=80, last_modified=30),
+        ]),
+    ])
+    fake_scan_cache_dir(cache)
+    eval_server._evict_for_challenger("bob/target")
+    assert set(cache._deleted) == {"h_c1", "h_c2", "h_c3"}
+
+
+def test_evict_swallows_scan_cache_exception_non_fatal(
+    monkeypatch, mocker,
+):
+    # If scan_cache_dir raises (e.g. transient HF lib glitch), evict
+    # must NOT propagate — caller (_load_challenger) is on the dispatch
+    # path and a raise here would stall every eval.
+    mocker.patch("huggingface_hub.scan_cache_dir",
+                  side_effect=RuntimeError("scan failed"))
+    monkeypatch.setattr(eval_server, "_king_repo", "alice/king")
+    # No assertion on side-effect — just that no exception escapes.
+    eval_server._evict_for_challenger("bob/target")
+
+
+def test_evict_swallows_delete_revisions_exception(
+    fake_scan_cache_dir, monkeypatch,
+):
+    # If the eviction itself raises, swallow it.
+    monkeypatch.setattr(eval_server, "_king_repo", "alice/king")
+    from types import SimpleNamespace
+
+    def boom(*hashes):
+        raise OSError("ENOSPC during delete")
+
+    cache = SimpleNamespace(
+        repos=[_repo("carol/old",
+                       [_rev("h_carol", size_gb=80, last_modified=50)])],
+        delete_revisions=boom,
+    )
+    fake_scan_cache_dir(cache)
+    eval_server._evict_for_challenger("bob/target")
