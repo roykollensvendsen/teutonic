@@ -18,6 +18,10 @@ import importlib.machinery
 import sys
 import types
 
+import pytest
+
+pytestmark = pytest.mark.arch_specific("archs.quasar")
+
 
 def _stub_accelerate() -> None:
     """Stub `accelerate` before `archs.quasar.size` imports it.
