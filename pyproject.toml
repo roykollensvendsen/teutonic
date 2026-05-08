@@ -61,6 +61,7 @@ asyncio_mode = "auto"
 markers = [
     "slow: tests that take >1s individually (e.g. load_model retry-backoff path). Skip locally with `pytest -m 'not slow'` for fast iteration.",
     "integration: tests that exercise multiple harness modules together (chain + eval-server + tick). Run focused with `pytest -m integration`.",
+    "arch_specific(module): test only valid when chain_config.ARCH_MODULE matches the named arch. Auto-skipped by tests/conftest.py:pytest_collection_modifyitems when the active arch differs.",
 ]
 
 [build-system]

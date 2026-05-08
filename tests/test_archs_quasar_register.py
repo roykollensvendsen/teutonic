@@ -7,10 +7,13 @@ idempotent — re-importing the package (in tests, eval workers,
 training scripts) must not raise even though AutoConfig.register
 itself raises ValueError on duplicate registration.
 """
+import pytest
 from transformers import AutoConfig, AutoModel, AutoModelForCausalLM
 
 import archs.quasar
 from archs.quasar import QuasarConfig, QuasarForCausalLM, QuasarModel
+
+pytestmark = pytest.mark.arch_specific("archs.quasar")
 
 
 def test_register_is_idempotent_on_second_call():

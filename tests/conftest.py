@@ -23,6 +23,32 @@ Adding a new shared fixture here:
 """
 import pytest
 
+import chain_config
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip `arch_specific(<module>)` tests when the active arch differs.
+
+    Test files in `tests/test_archs_<arch>_*.py` apply
+    `pytestmark = pytest.mark.arch_specific("archs.<arch>")`. When
+    `chain_config.ARCH_MODULE` points at a different package, those tests
+    are skipped instead of failing on import / construction errors. This
+    keeps the suite green across chain-cutovers (XXIV/Quasar ↔ LXXX/Qwen3
+    ↔ ...) without requiring per-cutover test edits.
+    """
+    active_arch = chain_config.ARCH_MODULE
+    skip_reasons: dict[str, pytest.MarkDecorator] = {}
+    for item in items:
+        for marker in item.iter_markers("arch_specific"):
+            required = marker.args[0] if marker.args else None
+            if required and required != active_arch:
+                key = required
+                if key not in skip_reasons:
+                    skip_reasons[key] = pytest.mark.skip(
+                        reason=f"requires chain_config.ARCH_MODULE={key!r}, "
+                               f"active is {active_arch!r}")
+                item.add_marker(skip_reasons[key])
+
 
 @pytest.fixture
 def r2_mock(mocker):
