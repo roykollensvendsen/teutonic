@@ -1,0 +1,35 @@
+# Test-only chain config that points at the dormant Quasar arch.
+#
+# Used by the CI compat-soak matrix entry (.github/workflows/tests.yml)
+# and by anyone who wants to verify locally that the suite still passes
+# under a non-active arch:
+#
+#     TEUTONIC_CHAIN_OVERRIDE=tests/_fixtures/chain.quasar.toml \
+#         pytest tests/ -m "not slow" -n auto
+#
+# The values mirror the Teutonic-XXIV chain that was retired by
+# upstream commit 59c34ab (2026-05-07 cutover to Teutonic-LXXX). They
+# are NOT used to talk to a live chain — they exist only to make
+# `chain_config.NAME` and `chain_config.ARCH_MODULE` resolve to Quasar
+# during the matrix run, so the `tests/test_archs_quasar_*.py` files
+# (marked `arch_specific("archs.quasar")` in M26) are exercised
+# instead of skipped.
+#
+# Updating: if archs/quasar/ ever needs new structural lock keys, sync
+# them with extra_lock_keys below.
+
+[chain]
+name = "Teutonic-XXIV"
+seed_repo = "unconst/Teutonic-XXIV"
+
+[arch]
+module = "archs.quasar"
+extra_lock_keys = [
+    "num_routed_experts",
+    "top_k",
+    "num_loops",
+    "memory_slots",
+]
+
+[seed]
+tokenizer_repo = "unconst/Teutonic-I"
