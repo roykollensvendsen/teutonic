@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import eval_server
+from tests._chain import repo
 
 # ---------------------------------------------------------------------
 # Reset module-level king state between tests so each starts clean.
@@ -89,17 +90,18 @@ def test_ensure_king_first_call_constructs_evaluator(
     fake_evaluator_cls, fake_probe, fake_cuda, monkeypatch,
 ):
     monkeypatch.setattr(eval_server, "PROBE_ENABLED", True)
+    king_repo = repo("alice", "king")
     result = eval_server._ensure_king(
-        "alice/Teutonic-LXXX-king", king_hash="abc",
+        king_repo, king_hash="abc",
         revision="rev1234567890",
     )
     assert len(fake_evaluator_cls) == 1
-    assert fake_evaluator_cls[0].repo == "alice/Teutonic-LXXX-king"
+    assert fake_evaluator_cls[0].repo == king_repo
     assert fake_evaluator_cls[0].revision == "rev1234567890"
     assert fake_evaluator_cls[0].label == "king"
     assert result is fake_evaluator_cls[0]
     # Module globals are populated.
-    assert eval_server._king_repo == "alice/Teutonic-LXXX-king"
+    assert eval_server._king_repo == king_repo
     assert eval_server._king_hash == "abc"
     assert eval_server._king_revision == "rev1234567890"
 
