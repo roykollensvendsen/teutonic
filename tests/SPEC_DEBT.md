@@ -85,6 +85,33 @@ Format:
 * **Touched by:** `tests/test_eval_server_cleanup_hf_cache.py` (M33)
 
 
+### validator.py:491 — `validate_challenger_config` (post-86ab8dd / 4240f44)
+
+* **Gap:** Docstring says "Check challenger config.json matches king
+  architecture before deploying". Since upstream commits 86ab8dd and
+  4240f44 (2026-05-08), the function ALSO checks:
+  * safetensors **naming layout** — accepts `model.safetensors` alone
+    OR `model.safetensors.index.json` + `model-NNNNN-of-NNNNN` shards;
+    rejects non-canonical names + sharded-without-index.
+  * safetensors **total size** — rejects > 200 GB (default), capped via
+    `TEUTONIC_MAX_CHALLENGER_SAFETENSORS_GB` env. Skipped when
+    `repo_info(files_metadata=True)` raises (graceful degradation —
+    fail-open against transient HF API errors).
+  Neither layout nor size are mentioned in the docstring, nor is the
+  env-var knob.
+* **Observed:** Two new blocks at validator.py:556-602 implementing
+  the naming check (with `_SAFETENSORS_SHARD_RE`) and size check
+  (with `repo_info(files_metadata=True)` + cap env var).
+* **Suggested:** docstring → add "Also rejects challengers whose
+  safetensors layout is not loadable by `from_pretrained(use_safetensors=True)`
+  (need either single-shard `model.safetensors` or sharded layout
+  with `model.safetensors.index.json`) or whose total `.safetensors`
+  size exceeds the cap (200 GB default, override via
+  `TEUTONIC_MAX_CHALLENGER_SAFETENSORS_GB`). Size check is fail-open
+  on `repo_info` exception."
+* **Touched by:** `tests/test_validate_challenger_config.py` (M36)
+
+
 ### eval/torch_runner.py:363 — `_lm_head_device`
 
 * **Gap:** Docstring says "Where lm_head's weight lives" — singular —
