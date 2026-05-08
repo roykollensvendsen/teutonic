@@ -4,9 +4,18 @@
 # tests/foundation. Does NOT trigger on main — that branch tracks
 # upstream (unarbos/teutonic) and isn't ours to validate.
 #
+# Compat-soak matrix (M27): the suite runs twice — once against the
+# active chain.toml (default, Teutonic-LXXX / Qwen3-MoE) and once with
+# TEUTONIC_CHAIN_OVERRIDE pointing at tests/_fixtures/chain.quasar.toml
+# (dormant Teutonic-XXIV / Quasar). The second run exercises the
+# arch_specific(archs.quasar) tests that are auto-skipped under LXXX,
+# proving the chain-cutover plumbing still works mechanically as
+# upstream evolves. If a future upstream change breaks the Quasar path
+# the alt-chain entry catches it before the next cutover lands.
+#
 # Caching strategy: uv-managed pip cache keyed on pyproject.toml so
 # subsequent runs reuse the heavy torch/transformers/bittensor
-# downloads. Expected runtime: ~5 min cold, ~2 min warm.
+# downloads. Expected runtime: ~5 min cold, ~2 min warm per matrix entry.
 
 name: tests
 
@@ -21,6 +30,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - chain: active
+            override: ""
+          - chain: quasar
+            override: tests/_fixtures/chain.quasar.toml
+    name: test (${{ matrix.chain }})
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,6 +65,9 @@ jobs:
             --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Ruff check
+        # Ruff is chain-agnostic; only run on the active matrix entry
+        # to avoid duplicating identical output.
+        if: matrix.chain == 'active'
         run: |
           source .venv/bin/activate
           ruff check --config scripts/teutonic.ruff.toml tests/
@@ -55,7 +76,10 @@ jobs:
         # `-n auto` parallelises across runner cores. ubuntu-latest has
         # 4 cores typically; suite drops from ~90s serial to ~30s parallel.
         # `--cov` collects coverage across the source dirs configured in
-        # pyproject's [tool.coverage.run].
+        # pyproject's [tool.coverage.run]. Empty TEUTONIC_CHAIN_OVERRIDE
+        # falls through to the in-tree chain.toml in chain_config.py.
+        env:
+          TEUTONIC_CHAIN_OVERRIDE: ${{ matrix.override }}
         run: |
           source .venv/bin/activate
           pytest tests/ -v -n auto \
@@ -66,10 +90,12 @@ jobs:
 
       - name: Upload coverage artifact
         # Always-uploaded; available even on failed runs for diagnosis.
+        # Artifact name disambiguated per matrix entry to avoid name
+        # collisions on parallel uploads.
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ github.run_id }}
+          name: coverage-${{ matrix.chain }}-${{ github.run_id }}
           path: |
             coverage.xml
             htmlcov/
