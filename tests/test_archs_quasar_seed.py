@@ -16,7 +16,11 @@
 """
 import json
 
+import pytest
+
 from archs.quasar import seed
+
+pytestmark = pytest.mark.arch_specific("archs.quasar")
 
 
 def test_build_config_uses_module_constants_for_dims(monkeypatch):
