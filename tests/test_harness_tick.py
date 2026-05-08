@@ -6,16 +6,19 @@ to a FakeEvalServer instance).
 """
 import httpx
 
+from tests._chain import repo
 from tests._harness.chain import FakeChain
 from tests._harness.eval_server import FakeEvalServer
 from tests._harness.tick import bind_eval_server_to_validator, run_chain_tick
 from validator import State
 
 
-def _valid_reveal_payload(repo: str = "alice/Teutonic-LXXX-chall") -> str:
+def _valid_reveal_payload(hf_repo: str | None = None) -> str:
     # scan_reveals expects "king_hash:hf_repo:model_hash" with the repo
-    # matching REPO_PATTERN ("Teutonic-LXXX-..." prefix).
-    return f"kh:{repo}:mh"
+    # matching REPO_PATTERN (chain.toml-derived prefix).
+    if hf_repo is None:
+        hf_repo = repo("alice", "chall")
+    return f"kh:{hf_repo}:mh"
 
 
 # ---------------------------------------------------------------------
@@ -95,14 +98,14 @@ def test_run_chain_tick_picks_up_new_reveal_added_between_ticks(r2_mock):
     chain.register("hk_alpha", uid=0)
     chain.register("hk_beta", uid=1)
     chain.commit_reveal("hk_alpha",
-                        _valid_reveal_payload("alice/Teutonic-LXXX-A"),
+                        _valid_reveal_payload(repo("alice", "A")),
                         block=100)
 
     state = State(r2_mock)
     first = run_chain_tick(state, chain)
 
     chain.commit_reveal("hk_beta",
-                        _valid_reveal_payload("bob/Teutonic-LXXX-B"),
+                        _valid_reveal_payload(repo("bob", "B")),
                         block=200)
     second = run_chain_tick(state, chain)
 
@@ -119,7 +122,7 @@ def test_run_chain_tick_skips_king_hotkey_reveal(r2_mock):
     chain.commit_reveal("hk_king", _valid_reveal_payload(), block=100)
 
     state = State(r2_mock)
-    state.set_king("hk_king", "alice/Teutonic-LXXX-king", "kh", 90,
+    state.set_king("hk_king", repo("alice", "king"), "kh", 90,
                    challenge_id="seed", king_revision="rev")
     snapshot = run_chain_tick(state, chain)
 
@@ -165,8 +168,8 @@ async def test_bind_routes_httpx_post_through_fake(monkeypatch):
     bind_eval_server_to_validator(fake_server, monkeypatch)
 
     payload = {
-        "king_repo": "alice/Teutonic-LXXX-king",
-        "challenger_repo": "bob/Teutonic-LXXX-chall",
+        "king_repo": repo("alice", "king"),
+        "challenger_repo": repo("bob", "chall"),
         "block_hash": "0x", "hotkey": "hk", "shard_key": "k",
     }
     async with httpx.AsyncClient() as client:
@@ -187,8 +190,8 @@ async def test_bind_routes_httpx_stream_through_fake(monkeypatch):
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             "/eval",
-            json={"king_repo": "a/Teutonic-LXXX-k",
-                  "challenger_repo": "b/Teutonic-LXXX-c",
+            json={"king_repo": repo("a", "k"),
+                  "challenger_repo": repo("b", "c"),
                   "block_hash": "0x", "hotkey": "h", "shard_key": "s"},
         )
         eval_id = resp.json()["eval_id"]

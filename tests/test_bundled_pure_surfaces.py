@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from eval.torch_runner import extract_sequences, math_isfinite
+from tests._chain import CHAIN_NAME, repo as make_repo
 from validator import _REPO_RE, REPO_PATTERN, parse_args
 
 # `extract_sequences(shard_data, data_offset, indices, seq_len)` —
@@ -86,36 +87,36 @@ def test_math_isfinite_handles_numpy_floats():
     assert not math_isfinite(np.float64("nan"))
 
 
-# `REPO_PATTERN` — regex r"^[^/]+/Teutonic-LXXX-.+$"
-# Validates HF repo names: <user>/Teutonic-LXXX-<anything>
-# Compiled into _REPO_RE at module load.
+# `REPO_PATTERN` — regex r"^[^/]+/{CHAIN_NAME}-.+$" (auto-derived from
+# chain.toml [chain].name). Validates HF repo names:
+# <user>/{CHAIN_NAME}-<anything>. Compiled into _REPO_RE at module load.
 
-@pytest.mark.parametrize("repo", [
-    "user1/Teutonic-LXXX-abc",
-    "miner/Teutonic-LXXX-v2-roy",
-    "org-with-dash/Teutonic-LXXX-1",
+@pytest.mark.parametrize("repo_str", [
+    make_repo("user1", "abc"),
+    make_repo("miner", "v2-roy"),
+    make_repo("org-with-dash", "1"),
 ])
-def test_repo_pattern_accepts_valid_names(repo):
-    assert _REPO_RE.match(repo) is not None
+def test_repo_pattern_accepts_valid_names(repo_str):
+    assert _REPO_RE.match(repo_str) is not None
 
 
-@pytest.mark.parametrize("repo", [
-    "Teutonic-LXXX-abc",                  # missing user/
-    "user/Teutonic-XXIII-abc",            # wrong version
-    "user/Teutonic-LXXX-",                # empty suffix
-    "user/RandomRepo",                    # not Teutonic-LXXX
-    "user/sub/Teutonic-LXXX-abc",         # extra slash
+@pytest.mark.parametrize("repo_str", [
+    f"{CHAIN_NAME}-abc",              # missing user/
+    f"user/Foreign-{CHAIN_NAME}-abc",  # foreign chain prefix (not Teutonic-)
+    f"user/{CHAIN_NAME}-",            # empty suffix (regex needs ".+")
+    "user/RandomRepo",                # not a chain repo at all
+    f"user/sub/{CHAIN_NAME}-abc",     # extra slash inside the name
     "",
 ])
-def test_repo_pattern_rejects_invalid_names(repo):
-    assert _REPO_RE.match(repo) is None
+def test_repo_pattern_rejects_invalid_names(repo_str):
+    assert _REPO_RE.match(repo_str) is None
 
 
 def test_repo_pattern_constant_matches_compiled_regex():
     # _REPO_RE is just re.compile(REPO_PATTERN); verify they agree.
     import re
     direct = re.compile(REPO_PATTERN)
-    sample = "user/Teutonic-LXXX-test"
+    sample = make_repo("user", "test")
     assert (direct.match(sample) is not None) == (_REPO_RE.match(sample) is not None)
 
 
