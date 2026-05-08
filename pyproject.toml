@@ -76,6 +76,11 @@ omit = [
     "tests/*",
     "*/__init__.py",
 ]
+# Branch coverage flags `if`/`while`/`for` paths that no test takes,
+# not just whether the line itself executed. Catches the common case
+# of a branch with both legs in the same line range where line coverage
+# reads as 100% but only one leg is exercised.
+branch = true
 
 [tool.coverage.report]
 precision = 1
