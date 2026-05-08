@@ -44,6 +44,13 @@ GPUs. See [Harness architecture](#harness-architecture) below.
 - **`integration`** — tests that exercise multiple harness modules
   together. Currently `test_harness_integration.py`. Run focused
   with `-m integration`.
+- **`arch_specific(module)`** — tests that depend on a specific
+  arch package being active. Currently `test_archs_quasar_*.py`
+  (`pytestmark = pytest.mark.arch_specific("archs.quasar")`). Auto-
+  skipped by `tests/conftest.py:pytest_collection_modifyitems` when
+  `chain_config.ARCH_MODULE` differs. To run them under a non-active
+  arch, override the chain.toml: `TEUTONIC_CHAIN_OVERRIDE=path/to/
+  chain.alt.toml pytest tests/test_archs_quasar_*.py`.
 
 ## How to add a test
 
