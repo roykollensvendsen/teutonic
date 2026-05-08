@@ -129,6 +129,114 @@ async def test_fetch_tmc_data_falls_back_to_zero_emission_on_missing_field(
 
 
 # ---------------------------------------------------------------------
+# miner_share scaling edge cases (upstream 26bf392).
+#
+# Pre-26bf392, the dashboard's `sn3_alpha_per_block` was the GROSS
+# subnet emission, which over-estimated the miner take by ~2x (miners
+# actually receive ~40% on SN3 — server / (server + validator + owner)).
+# Now `fetch_tmc_data` scales gross by `pend_srv / pend_total` and
+# exposes both the scaled value AND the gross value separately so the
+# UI can show "X/hr (50% miner share)" without recomputing.
+
+async def test_miner_share_falls_back_to_half_when_all_pending_zero(
+    monkeypatch, fake_async_client,
+):
+    # All pending fields zero → division-by-zero guarded → 0.5 default.
+    # Documents the "I don't know the split, assume 50/50" fallback.
+    monkeypatch.setattr(validator, "TMC_API_KEY", "fake-key")
+    fake_async_client.get.side_effect = [
+        _resp({"current_price": 1.0,
+               "usd_quote": {"percent_change_24h": 0.0}}),
+        _resp({"latest_snapshot": {
+            "alpha_sqrt_price": "1.0",
+            "subnet_alpha_out_emission": 1_000_000_000,  # 1 alpha/block gross
+            "pending_server_emission": 0,
+            "pending_validator_emission": 0,
+            "pending_owner_cut": 0,
+        }}),
+        _resp([{"burn": 0}]),
+    ]
+    result = await validator.fetch_tmc_data()
+    assert result["sn3_miner_share"] == pytest.approx(0.5)
+    # sn3_alpha_per_block = 1.0 gross × 0.5 share = 0.5
+    assert result["sn3_alpha_per_block"] == pytest.approx(0.5)
+    assert result["sn3_alpha_per_block_gross"] == pytest.approx(1.0)
+
+
+async def test_miner_share_scales_correctly_with_realistic_split(
+    monkeypatch, fake_async_client,
+):
+    # Production-like split: 2/5 to server (miners), 2/5 to validators,
+    # 1/5 to owner. Pin the exact arithmetic.
+    monkeypatch.setattr(validator, "TMC_API_KEY", "fake-key")
+    fake_async_client.get.side_effect = [
+        _resp({"current_price": 1.0,
+               "usd_quote": {"percent_change_24h": 0.0}}),
+        _resp({"latest_snapshot": {
+            "alpha_sqrt_price": "1.0",
+            "subnet_alpha_out_emission": 1_000_000_000,  # 1 alpha gross
+            "pending_server_emission": 2_000_000_000,
+            "pending_validator_emission": 2_000_000_000,
+            "pending_owner_cut": 1_000_000_000,
+        }}),
+        _resp([{"burn": 0}]),
+    ]
+    result = await validator.fetch_tmc_data()
+    # 2 / (2 + 2 + 1) = 0.4
+    assert result["sn3_miner_share"] == pytest.approx(0.4)
+    assert result["sn3_alpha_per_block"] == pytest.approx(0.4)
+    assert result["sn3_alpha_per_block_gross"] == pytest.approx(1.0)
+
+
+async def test_miner_share_falls_back_on_parse_exception(
+    monkeypatch, fake_async_client,
+):
+    # Non-numeric pending field → float() raises → except → miner_share=0.5.
+    # Documents that a malformed TMC response doesn't crash the dashboard.
+    monkeypatch.setattr(validator, "TMC_API_KEY", "fake-key")
+    fake_async_client.get.side_effect = [
+        _resp({"current_price": 1.0,
+               "usd_quote": {"percent_change_24h": 0.0}}),
+        _resp({"latest_snapshot": {
+            "alpha_sqrt_price": "1.0",
+            "subnet_alpha_out_emission": 1_000_000_000,
+            "pending_server_emission": "not-a-number",
+            "pending_validator_emission": 1_000_000_000,
+            "pending_owner_cut": 0,
+        }}),
+        _resp([{"burn": 0}]),
+    ]
+    result = await validator.fetch_tmc_data()
+    assert result["sn3_miner_share"] == pytest.approx(0.5)
+    # Gross is computed in its own try/except so it's still valid here.
+    assert result["sn3_alpha_per_block_gross"] == pytest.approx(1.0)
+
+
+async def test_miner_share_pure_server_share_is_one(
+    monkeypatch, fake_async_client,
+):
+    # Edge: server=positive, others=0 (e.g. early-network state).
+    # 1 / (1 + 0 + 0) = 1.0 — no scaling applied. Counterpart of
+    # the all-zero case, useful as a regression boundary.
+    monkeypatch.setattr(validator, "TMC_API_KEY", "fake-key")
+    fake_async_client.get.side_effect = [
+        _resp({"current_price": 1.0,
+               "usd_quote": {"percent_change_24h": 0.0}}),
+        _resp({"latest_snapshot": {
+            "alpha_sqrt_price": "1.0",
+            "subnet_alpha_out_emission": 1_000_000_000,
+            "pending_server_emission": 5_000_000_000,
+            "pending_validator_emission": 0,
+            "pending_owner_cut": 0,
+        }}),
+        _resp([{"burn": 0}]),
+    ]
+    result = await validator.fetch_tmc_data()
+    assert result["sn3_miner_share"] == pytest.approx(1.0)
+    assert result["sn3_alpha_per_block"] == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------
 # notify_new_king — Discord webhook for new-king crowning.
 
 async def test_notify_new_king_returns_early_when_token_unset(monkeypatch, fake_async_client):
