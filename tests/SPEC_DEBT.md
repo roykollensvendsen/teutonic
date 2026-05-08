@@ -83,3 +83,25 @@ Format:
   stall. `_king_repo=None`/`""` (no king crowned yet) is treated as
   'protect target only'."
 * **Touched by:** `tests/test_eval_server_cleanup_hf_cache.py` (M33)
+
+
+### eval/torch_runner.py:363 — `_lm_head_device`
+
+* **Gap:** Docstring says "Where lm_head's weight lives" — singular —
+  but does not specify behaviour when:
+  * the model has no `lm_head` attribute (raises AttributeError on
+    bare attribute access)
+  * `lm_head.parameters()` returns an empty iterator (raises
+    StopIteration on `next()`)
+  Either case is unreachable for valid HF causal-LM models, but a
+  refactor that adds defensive defaults could silently hide bugs in
+  upstream test fixtures.
+* **Observed:** Both error paths reachable as natural consequences
+  of the one-line impl `next(model.lm_head.parameters()).device`.
+  Tests pin them so a future refactor must update the docstring
+  alongside.
+* **Suggested:** docstring → add "Raises AttributeError if the model
+  has no `lm_head`; raises StopIteration if `lm_head.parameters()`
+  is empty. Both are unreachable for valid HF causal-LM models;
+  failure indicates a malformed fake or arch-package import problem."
+* **Touched by:** `tests/test_eval_torch_sharded.py` (M34)
