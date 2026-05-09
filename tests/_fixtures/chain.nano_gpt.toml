@@ -6,9 +6,13 @@
 #   - The local devnet runbook (playground/) — point validator/eval-server
 #     at this fixture when bringing up a localhost subtensor with toy models.
 #
-# Genesis seed repo here is intentionally fictional ("playground/Teutonic-Nano-mock-king");
-# bring up the seed with `python -m archs.nano_gpt.seed --push --repo <real-repo>`
-# and adjust seed_repo to match before launching the validator.
+# Genesis seed repo lives on HF under ai-garage's account. Pushed via
+#   TEUTONIC_SEED_REPO_OVERRIDE=ai-garage/Teutonic-Nano-devnet-king \
+#       python -m archs.nano_gpt.seed --push
+# Validator/eval-server hit real HF in process_challenge to download king
+# + challenger; isolation is at the wallet/chain layer, not the storage
+# layer (HF "pollution" is reversible — repos can be deleted from the HF
+# UI in seconds, unlike chain state).
 #
 # extra_lock_keys: GPT2Config doesn't share key names with the validator's
 # Qwen3-style _generic_lock (n_embd vs hidden_size, n_layer vs num_hidden_layers,
@@ -18,7 +22,7 @@
 
 [chain]
 name = "Teutonic-Nano"
-seed_repo = "playground/Teutonic-Nano-mock-king"
+seed_repo = "ai-garage/Teutonic-Nano-devnet-king"
 
 [arch]
 module = "archs.nano_gpt"

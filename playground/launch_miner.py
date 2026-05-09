@@ -1,26 +1,33 @@
 #!/usr/bin/env python3
-"""Submit a single reveal-commitment from one of the registered miners.
+"""Submit a reveal-commitment from one of the registered miners, with
+optional HF push so validator.process_challenge can actually download
+and dispatch eval.
 
-Phase 3f scaffolding: demonstrates the chain-side miner flow without
-needing a working HF push pipeline. Steps:
+Steps:
 
   1. Generate a fresh nano-gpt checkpoint under
      playground/miners/<wallet_name>/<run_id>/.
   2. Compute sha256 over the safetensors files (matches miner.py:91's
      `sha256_dir` byte-for-byte).
-  3. Submit `set_reveal_commitment(wallet, netuid, "<king>:<repo>:<hash>",
+  3. With --push: upload the checkpoint to HF under
+     <hf-namespace>/Teutonic-Nano-<wallet>-<run_id>. Without --push:
+     skip and use a fake repo name (validator.process_challenge will
+     404 at HfApi.model_info — useful for proving just the chain side).
+  4. Submit `set_reveal_commitment(wallet, netuid, "<king>:<repo>:<hash>",
      blocks_until_reveal=N)` against the local subtensor. After N blocks
-     the chain auto-reveals; validator.scan_reveals will then return the
-     entry on its next tick.
+     the chain auto-reveals; validator.scan_reveals returns the entry
+     on its next tick.
 
-What this does NOT do (intentional, gates on Phase 3g+ work):
+Caveats by design (gates on later phases):
 
-  - Push the model to HuggingFace. Validator's process_challenge will
-    fail at HfApi.model_info() — that's expected, this script proves the
-    chain-side reveal cycle, not the HF-side download cycle.
-  - Compete with a real king. king_hash is a placeholder (validator's
-    scan_reveals stores it but never re-checks; M23's SHA-swap test
-    pinned that property as an open exploit).
+  - king_hash is a placeholder (zeros). Validator's scan_reveals stores
+    it but never re-checks against the current king (M23's SHA-swap
+    test pinned that as a known open exploit).
+  - The local king ("ai-garage/Teutonic-Nano-devnet-king") is the
+    pristine seed; no actual reign progression happens until eval-server
+    finishes a real bootstrap test. That gates on the dataset shard
+    being uploaded to minio (Phase 3a) and validator dispatching /eval
+    (Phase 3h).
 
 Run:
     docker compose -f playground/docker-compose.yml up -d
@@ -123,6 +130,14 @@ def main() -> int:
                    help="Torch RNG seed. Default = wall-clock so successive "
                         "runs produce different checkpoints (and thus "
                         "different model_hashes).")
+    p.add_argument("--push", action="store_true",
+                   help="Upload the checkpoint to HF before reveal. Without "
+                        "this, the reveal payload's hf_repo is fictional and "
+                        "validator.process_challenge will 404 — useful for "
+                        "isolating chain-side bugs from HF-side ones.")
+    p.add_argument("--hf-namespace", default="ai-garage",
+                   help="HF account or org to push under. Repo name is "
+                        "<namespace>/Teutonic-Nano-<wallet>-<run_id>.")
     args = p.parse_args()
 
     netuid = int(os.environ.get("TEUTONIC_NETUID", "2"))
@@ -155,14 +170,26 @@ def main() -> int:
     model_hash = sha256_dir(ckpt_dir)
     log.info("model_hash (sha256_dir): %s", model_hash)
 
-    # 3. Build the reveal payload — same colon-separated format scan_reveals
-    #    parses (validator.py:647-650). hf_repo must match REPO_PATTERN
-    #    `^[^/]+/Teutonic-Nano-.+$` from chain.nano_gpt.toml.
-    fake_hf_repo = f"{args.wallet}/Teutonic-Nano-{args.wallet}-{run_id}"
-    payload = f"{args.king_hash}:{fake_hf_repo}:{model_hash}"
+    # 3. Optional: push to HF so validator.process_challenge can actually
+    #    download. Repo naming matches chain.nano_gpt.toml's REPO_PATTERN
+    #    `^[^/]+/Teutonic-Nano-.+$`.
+    hf_repo = f"{args.hf_namespace}/Teutonic-Nano-{args.wallet}-{run_id}"
+    if args.push:
+        from huggingface_hub import HfApi
+        api = HfApi()
+        log.info("pushing %s to HF (this is a real upload)", hf_repo)
+        api.create_repo(hf_repo, exist_ok=True, private=False)
+        api.upload_folder(folder_path=str(ckpt_dir), repo_id=hf_repo)
+        log.info("pushed: https://huggingface.co/%s", hf_repo)
+    else:
+        log.info("--push not set; reveal points at fictional %s", hf_repo)
+
+    # 4. Build the reveal payload — same colon-separated format scan_reveals
+    #    parses (validator.py:647-650).
+    payload = f"{args.king_hash}:{hf_repo}:{model_hash}"
     log.info("reveal payload: %s", payload)
 
-    # 4. Submit set_reveal_commitment. Auto-reveals after blocks_until_reveal
+    # 5. Submit set_reveal_commitment. Auto-reveals after blocks_until_reveal
     #    blocks; until then `subtensor.get_all_revealed_commitments` returns
     #    the prior state. After reveal, validator.scan_reveals sees this
     #    entry on its next tick.
@@ -180,7 +207,7 @@ def main() -> int:
         raise SystemExit(f"set_reveal_commitment failed: {resp.error_message}")
     log.info("commit included; reveal scheduled")
 
-    # 5. Optional: poll until revealed
+    # 6. Optional: poll until revealed
     log.info("waiting for auto-reveal (~%ds at 12s block time) ...",
              args.blocks_until_reveal * 12 + 6)
     deadline = time.time() + args.blocks_until_reveal * 12 + 30
