@@ -1,0 +1,6 @@
+# NEVER commit wallet keys, even devnet ones. Coldkeys hold balances on the
+# local subtensor — replaying them in the wrong context (e.g. against testnet
+# or finney with the same name) is exactly the kind of foot-gun this
+# .gitignore prevents. Regenerate via `python -m playground.chain.bootstrap_devnet`.
+*
+!.gitignore
