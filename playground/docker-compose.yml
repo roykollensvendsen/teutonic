@@ -1,22 +1,36 @@
 # Local devnet services for the nano-gpt experiment.
 #
-# Phase 3a: storage. minio is an S3-compatible blob store; the validator's
-# R2 client (eval/torch_runner.R2) speaks plain boto3 against any S3 endpoint
-# so pointing it at this container is exactly equivalent to pointing it at
-# Cloudflare R2 in production — no validator-side changes.
+# Phase 3a (minio) and Phase 3b (subtensor 3-node localnet). The validator's
+# R2 client and bittensor SDK both speak plain protocols against these
+# endpoints — no validator-side modifications, just env vars in
+# playground/env.devnet.sh.
 #
-# Phase 3b (subtensor) and 3c (HF mirror) get added as services here in
-# follow-up commits. Single docker-compose file keeps the dev loop one
-# command (`docker compose up -d` from playground/).
+# The subtensor stack runs three validator nodes (one/two/three) because the
+# bundled `/localnet.json` chainspec uses BABE consensus, which won't
+# finalise blocks with fewer authorities. The canonical bring-up follows
+# opentensor/subtensor's `scripts/localnet.sh` pattern: --one and --two are
+# subtensor CLI shorthands that auto-insert //One and //Two keys; the third
+# node has no shorthand, so we insert //Three keys via a wrapper command
+# before exec'ing the node binary.
+#
+# subtensor-one runs with a deterministic --node-key so its libp2p peer ID
+# is stable across restarts; that lets nodes two/three hardcode the bootnode
+# string instead of reading the peer ID at runtime.
 #
 # Bring up:    docker compose -f playground/docker-compose.yml up -d
 # Tear down:   docker compose -f playground/docker-compose.yml down -v
-# Logs:        docker compose -f playground/docker-compose.yml logs -f minio
-# Console:     http://localhost:9101  (minioadmin / minioadmin)
+# Logs:        docker compose -f playground/docker-compose.yml logs -f subtensor-one
+# Console:     http://localhost:9101  (minio: minioadmin / minioadmin)
+# RPC:         http://localhost:9944  (subtensor-one)
 #
-# Ports are shifted from minio's defaults (9000/9001) to 9100/9101 to avoid
-# colliding with other local dev services. Keep playground/.env.devnet's
-# TEUTONIC_R2_ENDPOINT in sync.
+# Port allocations (host ⇄ container):
+#   minio              9100→9000  (S3) / 9101→9001 (web console)
+#   subtensor-one      9944→9944  (RPC) / 30334→30334 (p2p)
+#   subtensor-two      9945→9944  (RPC) / 30335→30334 (p2p)
+#   subtensor-three    9946→9944  (RPC) / 30336→30334 (p2p)
+#
+# minio's default 9000/9001 collide with a local connexi-service; subtensor's
+# defaults are stock.
 
 services:
   minio:
@@ -40,5 +54,85 @@ services:
       timeout: 5s
       retries: 6
 
+  subtensor-one:
+    image: ghcr.io/opentensor/subtensor:v3.3.15-402
+    container_name: teutonic-devnet-subtensor-one
+    command:
+      - --base-path=/data
+      - --chain=/localnet.json
+      # --one auto-inserts //One sr25519 (aura) and ed25519 (grandpa) keys.
+      - --one
+      # Deterministic node-key so the libp2p peer ID is stable across
+      # restarts. Peer ID for this key is
+      #   12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+      # which subtensor-two/three reference in their bootnodes flag.
+      - --node-key=0000000000000000000000000000000000000000000000000000000000000001
+      - --port=30334
+      - --rpc-port=9944
+      - --validator
+      - --rpc-cors=all
+      - --allow-private-ipv4
+      - --discover-local
+      - --unsafe-rpc-external
+    ports:
+      - "9944:9944"
+      - "30334:30334"
+    volumes:
+      - subtensor-one-data:/data
+
+  subtensor-two:
+    image: ghcr.io/opentensor/subtensor:v3.3.15-402
+    container_name: teutonic-devnet-subtensor-two
+    depends_on:
+      - subtensor-one
+    command:
+      - --base-path=/data
+      - --chain=/localnet.json
+      - --two
+      - --port=30334
+      - --rpc-port=9944
+      - --validator
+      - --rpc-cors=all
+      - --allow-private-ipv4
+      - --discover-local
+      - --unsafe-rpc-external
+      - --unsafe-force-node-key-generation
+      - --bootnodes=/dns/subtensor-one/tcp/30334/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+    ports:
+      - "9945:9944"
+      - "30335:30334"
+    volumes:
+      - subtensor-two-data:/data
+
+  # subtensor-three has no `--three` shorthand — insert //Three's aura+grandpa
+  # keys, then exec the node. We replicate the prebuilt entrypoint's chown
+  # step inline since the wrapper bypasses /entrypoint.sh.
+  subtensor-three:
+    image: ghcr.io/opentensor/subtensor:v3.3.15-402
+    container_name: teutonic-devnet-subtensor-three
+    depends_on:
+      - subtensor-one
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        mkdir -p /data && chown -R subtensor:subtensor /data
+        gosu subtensor node-subtensor key insert --base-path /data --chain /localnet.json --scheme Sr25519 --suri //Three --key-type aura
+        gosu subtensor node-subtensor key insert --base-path /data --chain /localnet.json --scheme Ed25519 --suri //Three --key-type gran
+        exec gosu subtensor node-subtensor \
+          --base-path /data --chain /localnet.json \
+          --port 30334 --rpc-port 9944 \
+          --validator --rpc-cors=all --allow-private-ipv4 --discover-local \
+          --unsafe-rpc-external --unsafe-force-node-key-generation \
+          --bootnodes /dns/subtensor-one/tcp/30334/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+    ports:
+      - "9946:9944"
+      - "30336:30334"
+    volumes:
+      - subtensor-three-data:/data
+
 volumes:
   minio-data:
+  subtensor-one-data:
+  subtensor-two-data:
+  subtensor-three-data:
