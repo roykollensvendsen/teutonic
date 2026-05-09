@@ -24,6 +24,13 @@ export TEUTONIC_R2_BUCKET="playground"
 # subtensor-one — the deterministic-peer-ID node in docker-compose.yml.
 export TEUTONIC_NETWORK="ws://localhost:9944"
 
+# Eval server. Port 9000 (eval_server.py's default) collides with a local
+# connexi-service on this box, so devnet shifts to 9200. Validator reads
+# TEUTONIC_EVAL_SERVER and posts /eval requests there.
+export EVAL_PORT="9200"
+export EVAL_HOST="127.0.0.1"
+export TEUTONIC_EVAL_SERVER="http://localhost:9200"
+
 # Validator/eval read these too. Keep them aligned with chain.toml — the
 # fixture lives at tests/_fixtures/chain.nano_gpt.toml.
 export TEUTONIC_CHAIN_OVERRIDE="tests/_fixtures/chain.nano_gpt.toml"

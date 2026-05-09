@@ -31,12 +31,12 @@ _DEFAULTS = {
     "TEUTONIC_NETUID": "2",
     "BT_WALLET_NAME": "validator",
     "BT_WALLET_HOTKEY": "default",
-    # validator.py refuses to start without TEUTONIC_EVAL_SERVER. The
-    # eval-server is its own service (Phase 3e — not yet wired). Point at
-    # a placeholder so module import + state-load succeeds; the tick loop
-    # only hits the eval-server when a reveal actually needs evaluating,
-    # so a fresh subnet with no reveals can tick fine without it.
-    "TEUTONIC_EVAL_SERVER": "http://localhost:9000",
+    # eval-server is its own process (`python -m playground.launch_eval_server`);
+    # port 9200 by env.devnet.sh because 9000 collides with connexi-service
+    # locally. Validator only POSTs to it when a reveal needs evaluating, so
+    # this remains soft-required — the tick loop runs idle on a fresh subnet
+    # even if eval-server isn't up yet.
+    "TEUTONIC_EVAL_SERVER": "http://localhost:9200",
 }
 for k, v in _DEFAULTS.items():
     os.environ.setdefault(k, v)
