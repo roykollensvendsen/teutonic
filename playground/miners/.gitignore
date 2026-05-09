@@ -1,0 +1,4 @@
+# Generated nano-gpt checkpoints from launch_miner.py runs (~30 MB each).
+# Trivially regenerable; never commit.
+*
+!.gitignore
