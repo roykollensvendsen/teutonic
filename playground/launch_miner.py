@@ -208,7 +208,14 @@ def main() -> int:
         wait_for_finalization=True,
     )
     if not resp.success:
-        raise SystemExit(f"set_reveal_commitment failed: {resp.error_message}")
+        # ExtrinsicResponse exposes error info under different attribute
+        # names across bittensor SDK versions; .error is the 10.x name,
+        # .error_message was used in 9.x. Fall through to repr() so any
+        # SDK shape produces a useful message.
+        err = (getattr(resp, "error", None)
+               or getattr(resp, "error_message", None)
+               or repr(resp))
+        raise SystemExit(f"set_reveal_commitment failed: {err}")
     log.info("commit included; reveal scheduled")
 
     # 6. Optional: poll until revealed
