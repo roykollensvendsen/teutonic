@@ -112,6 +112,114 @@ def build_checkpoint(out_dir: Path, *, n_embd: int, n_layer: int, n_head: int,
              out_dir, sum(p.numel() for p in model.parameters()) / 1e6)
 
 
+def fetch_current_king_repo(default: str) -> str:
+    """Read current king's HF repo from the local dashboard server.
+
+    The validator publishes dashboard.json with `king.hf_repo` after every
+    eval verdict. Without a running dashboard server (or before the first
+    successful eval) the response is empty / unavailable; fall back to
+    `default` (typically chain_config.SEED_REPO).
+    """
+    import json
+    from urllib.request import Request, urlopen
+    try:
+        req = Request("http://localhost:9300/dashboard.json",
+                      headers={"Cache-Control": "no-cache"})
+        with urlopen(req, timeout=3) as r:
+            d = json.loads(r.read())
+        repo = d.get("king", {}).get("hf_repo")
+        if repo:
+            return repo
+    except Exception:
+        pass
+    return default
+
+
+def train_on_shakespeare(model, tokens, *, n_steps: int, seq_len: int,
+                         batch_size: int, lr: float, log_every: int = 20):
+    """Mini training loop. Mutates `model` in-place; returns final loss.
+
+    `tokens` is a flat numpy uint32 array (the same shard build_shakespeare
+    pushes to minio). Each step samples `batch_size` random seq_len-windows
+    and does one AdamW step. The aim isn't great training — just enough
+    that successive miners produce models with monotonically lower loss.
+    """
+    from torch.optim import AdamW
+    device = next(model.parameters()).device
+    n_tokens = len(tokens)
+    if n_tokens < seq_len + 1:
+        raise SystemExit(
+            f"corpus too small: {n_tokens} tokens but need {seq_len+1}"
+        )
+
+    model.train()
+    optimizer = AdamW(model.parameters(), lr=lr)
+
+    last_loss = float("nan")
+    for step in range(n_steps):
+        starts = torch.randint(0, n_tokens - seq_len - 1, (batch_size,))
+        # Build batch on CPU then move; small enough that copy isn't a bottleneck.
+        batch = torch.stack([
+            torch.from_numpy(tokens[s:s + seq_len + 1].astype("int64"))
+            for s in starts.tolist()
+        ]).to(device)
+        input_ids = batch[:, :-1]
+        targets = batch[:, 1:]
+
+        outputs = model(input_ids, labels=targets)
+        loss = outputs.loss
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        last_loss = loss.item()
+        if step == 0 or (step + 1) % log_every == 0 or step == n_steps - 1:
+            log.info("train step %d/%d  loss=%.4f", step + 1, n_steps, last_loss)
+    return last_loss
+
+
+def build_trained_checkpoint(out_dir: Path, *, from_king_repo: str,
+                              shakespeare_npy: Path, n_steps: int,
+                              batch_size: int, seq_len: int, lr: float) -> None:
+    """Download current king from HF, fine-tune on Shakespeare tokens, save.
+
+    `from_king_repo` is a HF repo id (e.g. "ai-garage/Teutonic-Nano-..."). The
+    structural lock keys (n_embd, n_layer, n_head, n_positions, n_inner,
+    activation_function) are inherited from the king's config — we just
+    update weights, never the architecture, which keeps validator's
+    validate_challenger_config happy on push.
+    """
+    import numpy as np
+    from huggingface_hub import snapshot_download
+    from transformers import AutoModelForCausalLM
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log.info("downloading king %s for training start-point", from_king_repo)
+    king_local = snapshot_download(from_king_repo)
+    model = AutoModelForCausalLM.from_pretrained(
+        king_local, dtype=torch.float32,
+    ).to("cuda")
+    log.info("king loaded: %.2fM params on cuda",
+             sum(p.numel() for p in model.parameters()) / 1e6)
+
+    log.info("loading shakespeare tokens from %s", shakespeare_npy)
+    tokens = np.load(shakespeare_npy)
+    log.info("tokens: %d (compressing to seq_len=%d → %d windows)",
+             len(tokens), seq_len, len(tokens) // seq_len)
+
+    last_loss = train_on_shakespeare(
+        model, tokens,
+        n_steps=n_steps, seq_len=seq_len, batch_size=batch_size, lr=lr,
+    )
+    log.info("training done; final batch loss=%.4f", last_loss)
+
+    # Save in fp32 to disk (eval loads fp32; bf16 round-trip can shift weights
+    # enough to fail the validator's norm-quant probe).
+    model.save_pretrained(out_dir, safe_serialization=True)
+    log.info("saved trained checkpoint to %s", out_dir)
+
+
 def main() -> int:
     _assert_safe()
 
@@ -138,6 +246,32 @@ def main() -> int:
     p.add_argument("--hf-namespace", default="ai-garage",
                    help="HF account or org to push under. Repo name is "
                         "<namespace>/Teutonic-Nano-<wallet>-<run_id>.")
+    p.add_argument("--train", action="store_true",
+                   help="Train from current king instead of random-init. "
+                        "Downloads dashboard.king.hf_repo (or seed_repo if no "
+                        "dashboard / no king yet), fine-tunes on the local "
+                        "shakespeare shard, then pushes the trained model. "
+                        "Each successive miner submission compounds on the "
+                        "previous king — gives a real falling loss curve "
+                        "instead of random-coinflip noise.")
+    p.add_argument("--train-steps", type=int, default=200,
+                   help="AdamW steps over shakespeare tokens. Default 200 "
+                        "(~30s on Quadro P3200) is enough to see a loss drop "
+                        "per submission without dominating the reveal cycle.")
+    p.add_argument("--train-batch-size", type=int, default=1,
+                   help="Sequences per step. Pascal P3200's 6 GB only fits "
+                        "batch=1 during training (forward+backward+adam state "
+                        "+ 50257-vocab logits is ~5 GB at seq_len=2048 in "
+                        "fp32). Bigger GPUs can crank up.")
+    p.add_argument("--train-lr", type=float, default=3e-4,
+                   help="AdamW learning rate. 3e-4 is the GPT-2 default; lower "
+                        "for more conservative steps (less catastrophic "
+                        "forgetting between miner submissions).")
+    p.add_argument("--shakespeare-npy",
+                   default="playground/dataset/data/shards/shard_000000.npy",
+                   help="Local shard built by playground.dataset.build_shakespeare. "
+                        "Same bytes that minio serves, so train-time and "
+                        "eval-time tokens are identical (no train-eval drift).")
     args = p.parse_args()
 
     netuid = int(os.environ.get("TEUTONIC_NETUID", "2"))
@@ -162,9 +296,27 @@ def main() -> int:
     # 1. Build a nano-gpt checkpoint
     run_id = f"run-{int(time.time())}"
     ckpt_dir = MINERS_ROOT / args.wallet / run_id
-    log.info("building nano-gpt checkpoint at %s", ckpt_dir)
-    build_checkpoint(ckpt_dir, n_embd=128, n_layer=4, n_head=4, vocab=50257,
-                     seed=args.seed)
+    if args.train:
+        # Pull the current king's hf_repo — dashboard knows it post-eval; if
+        # no dashboard or no king, fall back to chain_config.SEED_REPO so a
+        # cold start trains from the seed.
+        sys.path.insert(0, str(_REPO_ROOT))
+        import chain_config  # noqa: E402
+        from_king = fetch_current_king_repo(default=chain_config.SEED_REPO)
+        log.info("training start-point: %s", from_king)
+        build_trained_checkpoint(
+            ckpt_dir,
+            from_king_repo=from_king,
+            shakespeare_npy=Path(args.shakespeare_npy),
+            n_steps=args.train_steps,
+            batch_size=args.train_batch_size,
+            seq_len=2048,
+            lr=args.train_lr,
+        )
+    else:
+        log.info("building random-init nano-gpt at %s", ckpt_dir)
+        build_checkpoint(ckpt_dir, n_embd=128, n_layer=4, n_head=4, vocab=50257,
+                         seed=args.seed)
 
     # 2. Hash the safetensors
     model_hash = sha256_dir(ckpt_dir)
