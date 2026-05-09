@@ -82,8 +82,11 @@ def cmd_activate(name: str) -> int:
     for k, v in cfg.get("env", {}).items():
         print(f"export {k}={v!r}")
     print("# next:  source playground/env.devnet.sh   # base devnet env")
-    print(f"#        eval $(python -m playground.experiments.tracker activate {name})")
+    print(f"#        source <(python -m playground.experiments.tracker activate {name})")
     print(f"#        python -m playground.launch_validator   # tied to {name}'s chain")
+    print("#")
+    print("# Use `source <(...)` not `eval $(...)`  — the latter loses newlines")
+    print("# without explicit quotes and merges all exports into one line.")
     return 0
 
 

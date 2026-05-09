@@ -92,6 +92,49 @@ if not hasattr(bt.Wallet, "_devnet_shimmed_wraps"):
 
 
 # ---------------------------------------------------------------------------
+# bittensor decode_revealed_commitment shim.
+#
+# Some chain-stored reveals come back as raw-bytes-as-Python-string (each
+# byte rendered as its char/escape) instead of "0x<hex>"-form. The SDK's
+# `bytes.fromhex(com_hex.removeprefix("0x"))` blows up on the raw form
+# with `ValueError: non-hexadecimal number found in fromhex()` and that
+# kills the entire scan_reveals call — every revealed commitment for
+# every hotkey on that netuid becomes unreadable.
+#
+# Wrap the decode to fall through to encoding the string as Latin-1 bytes
+# when fromhex fails. Keeps the same return shape so validator.scan_reveals
+# is unaffected.
+from bittensor.core.chain_data import utils as _bt_utils  # noqa: E402
+
+_orig_decode = _bt_utils.decode_revealed_commitment
+
+
+def _decode_with_fallback(encoded_data):
+    com_hex, block = encoded_data
+    if isinstance(com_hex, str):
+        cleaned = com_hex.removeprefix("0x")
+        try:
+            com_bytes = bytes.fromhex(cleaned)
+        except ValueError:
+            # Raw-bytes-as-string form: each char is one byte.
+            com_bytes = com_hex.encode("latin1")
+    else:
+        com_bytes = bytes(com_hex)
+
+    # Now run the same SCALE-prefix offset logic as upstream.
+    first = com_bytes[0]
+    mode = first & 0b11
+    offset = 1 if mode == 0 else (2 if mode == 1 else 4)
+    return block, com_bytes[offset:].decode("utf-8", errors="ignore")
+
+
+if not getattr(_bt_utils.decode_revealed_commitment,
+               "_devnet_shimmed", False):
+    _decode_with_fallback._devnet_shimmed = True
+    _bt_utils.decode_revealed_commitment = _decode_with_fallback
+
+
+# ---------------------------------------------------------------------------
 # Transformers GPT2LMHeadModel shim.
 #
 # eval/torch_runner.py:397 and :451-452 do `model.model(input_ids)` —

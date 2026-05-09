@@ -12,25 +12,25 @@
 #   5. Wipe validator state in minio, re-bootstrap netuid
 
 [experiment]
-description = "char-level + 118K params — Chinchilla-targeted"
+description = "char-level + 124K params — Chinchilla-targeted"
 created     = "2026-05-09"
-status      = "draft"   # not yet bootstrapped on chain
+status      = "active"  # bootstrapped 2026-05-09; king pushed
 
 [arch]
 name         = "nano-gpt (char-level)"
-vocab_size   = 65         # ~unique chars in Shakespeare
+vocab_size   = 69         # 65 unique chars + 4 specials (pad/eos/bos/unk)
 n_embd       = 32
 n_layer      = 4
 n_head       = 4
 n_positions  = 2048       # forced by validator.py:60 SEQ_LEN
-total_params = 118_000    # estimate
-file_size_mb = 0.47       # fp32
+total_params = 124_000    # observed in seeded king
+file_size_mb = 0.479      # observed: 479 KB safetensors fp32
 
 [dataset]
 source       = "tinyshakespeare (Karpathy)"
 tokenizer    = "char-level (custom 65-token vocab)"
-total_tokens = 1_115_000  # raw chars
-sequences    = 545        # at seq_len=2048
+total_tokens = 1_107_968  # observed (after dropping partial seq_len tail)
+sequences    = 541        # at seq_len=2048
 
 [training]
 steps      = 5000         # 25x baseline; trains in ~minutes on Quadro P3200
@@ -40,4 +40,5 @@ weight_decay = 0.1
 warmup_steps = 100
 
 [env]
-# Will be set up when this experiment is built out — placeholder.
+# tracker.activate exports these on top of base env.devnet.sh.
+TEUTONIC_DATASET_DIR = "playground/dataset/data-char"

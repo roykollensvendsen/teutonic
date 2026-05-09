@@ -1,0 +1,37 @@
+# Chain config for the char-tiny experiment.
+#
+# Same nano-gpt arch package as baseline, but with a 69-token char-level
+# vocab (4 specials + 65 unique Shakespeare chars) instead of gpt2's
+# 50257-token BPE. Total params drop from 7.5M to ~118K — Chinchilla-
+# targeted for the 1.1M-char Shakespeare corpus.
+#
+# Push prerequisites:
+#   1. python -m playground.tokenizers.build_char_tokenizer --push
+#         → ai-garage/Teutonic-Nano-char-tokenizer
+#   2. TEUTONIC_SEED_VOCAB=69 TEUTONIC_SEED_N_EMBD=32 ... \
+#      TEUTONIC_SEED_REPO_OVERRIDE=ai-garage/Teutonic-Nano-Char-devnet-king \
+#         python -m archs.nano_gpt.seed --push
+#   3. python -m playground.dataset.build_shakespeare_char
+#         → playground/dataset/data-char/{manifest,shards/}
+#   4. Upload data-char to minio (replaces baseline shard)
+#
+# extra_lock_keys: same GPT2-side keys as baseline. The vocab_size lock
+# already lives in validator's _generic_lock so we don't need to repeat it.
+
+[chain]
+name = "Teutonic-Nano-Char"
+seed_repo = "ai-garage/Teutonic-Nano-Char-devnet-king"
+
+[arch]
+module = "archs.nano_gpt"
+extra_lock_keys = [
+    "n_embd",
+    "n_layer",
+    "n_head",
+    "n_positions",
+    "n_inner",
+    "activation_function",
+]
+
+[seed]
+tokenizer_repo = "ai-garage/Teutonic-Nano-char-tokenizer"

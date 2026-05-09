@@ -323,12 +323,21 @@ def main() -> int:
     log.info("model_hash (sha256_dir): %s", model_hash)
 
     # 3. Optional: push to HF so validator.process_challenge can actually
-    #    download. Repo naming embeds the coldkey ss58 prefix (first 8 chars)
-    #    so validator's a36e71d coldkey-prefix check passes — without that
-    #    embedded, process_challenge rejects with
-    #    "hf repo ... must contain miner coldkey prefix '<prefix>'".
+    #    download. Repo naming:
+    #      - matches chain.<chain>.toml's REPO_PATTERN (auto-derived from
+    #        chain.NAME — "Teutonic-Nano" for baseline, "Teutonic-Nano-Char"
+    #        for char-tiny, etc.). Using chain_config.NAME means switching
+    #        experiments via TEUTONIC_CHAIN_OVERRIDE auto-routes pushes to
+    #        the right namespace.
+    #      - embeds the coldkey ss58 prefix (first 8 chars) so validator's
+    #        a36e71d coldkey-prefix check passes — without that embedded,
+    #        process_challenge rejects with
+    #        "hf repo ... must contain miner coldkey prefix '<prefix>'".
+    sys.path.insert(0, str(_REPO_ROOT))
+    import chain_config as _chain_cfg  # noqa: E402, PLC0415
+
     coldkey_prefix = wallet.coldkeypub.ss58_address[:8]
-    hf_repo = (f"{args.hf_namespace}/Teutonic-Nano-"
+    hf_repo = (f"{args.hf_namespace}/{_chain_cfg.NAME}-"
                f"{coldkey_prefix}-{args.wallet}-{run_id}")
     if args.push:
         from huggingface_hub import HfApi
