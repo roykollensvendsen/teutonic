@@ -1,0 +1,37 @@
+# Baseline experiment: gpt2-tokenized Shakespeare + 7.5M-param nano-gpt.
+#
+# This is what the devnet ran end-to-end first (commits c8bfa31 .. 9452be8).
+# Kept as a reference point so future experiments compare against the same
+# initial conditions: random-init coinflip regime up to ~10.82, then a
+# regime shift to ~6.4 after `--train` mode lands.
+
+[experiment]
+description = "gpt2 BPE + 7.5M nano-gpt — original setup"
+created     = "2026-05-09"
+status      = "active"
+
+[arch]
+name        = "nano-gpt (gpt2 backbone)"
+vocab_size  = 50257
+n_embd      = 128
+n_layer     = 4
+n_head      = 4
+n_positions = 2048
+total_params = 7_490_000   # observed
+file_size_mb = 30          # fp32
+
+[dataset]
+source       = "tinyshakespeare (Karpathy)"
+tokenizer    = "gpt2"
+total_tokens = 337_920
+sequences    = 165          # at seq_len=2048
+
+[training]
+steps      = 200            # default; can be overridden per submission
+batch_size = 1              # capped by 6 GB Pascal VRAM
+lr         = 3e-4           # AdamW default
+
+[env]
+# Per-experiment env-var overrides applied by `tracker.py activate`.
+# Most defaults already match what env.devnet.sh sets — list only
+# experiment-specific changes here.

@@ -1,0 +1,43 @@
+# char-tiny experiment: char-level vocab + ~118K-param nano-gpt.
+#
+# Chinchilla-targeted: 9 tokens/param ratio (vs baseline's 0.045) so the
+# model is forced to actually learn rather than memorize. Expected loss
+# floor around 1.2-1.5 nats/char (Shannon ~1 bit/char on English).
+#
+# Bring-up checklist (when activated):
+#   1. Re-tokenize Shakespeare at char-level → playground/dataset/data-char/
+#   2. Build new tokenizer + push to ai-garage/Teutonic-Nano-char-tokenizer
+#   3. Re-seed king with the small dims below + push
+#   4. (chain.toml is already shaped for this in the same dir)
+#   5. Wipe validator state in minio, re-bootstrap netuid
+
+[experiment]
+description = "char-level + 118K params — Chinchilla-targeted"
+created     = "2026-05-09"
+status      = "draft"   # not yet bootstrapped on chain
+
+[arch]
+name         = "nano-gpt (char-level)"
+vocab_size   = 65         # ~unique chars in Shakespeare
+n_embd       = 32
+n_layer      = 4
+n_head       = 4
+n_positions  = 2048       # forced by validator.py:60 SEQ_LEN
+total_params = 118_000    # estimate
+file_size_mb = 0.47       # fp32
+
+[dataset]
+source       = "tinyshakespeare (Karpathy)"
+tokenizer    = "char-level (custom 65-token vocab)"
+total_tokens = 1_115_000  # raw chars
+sequences    = 545        # at seq_len=2048
+
+[training]
+steps      = 5000         # 25x baseline; trains in ~minutes on Quadro P3200
+batch_size = 32           # vocab=65 fits much bigger batches than gpt2 BPE
+lr         = 1e-3         # higher LR works for tiny models
+weight_decay = 0.1
+warmup_steps = 100
+
+[env]
+# Will be set up when this experiment is built out — placeholder.
