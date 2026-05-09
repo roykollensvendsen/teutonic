@@ -31,6 +31,13 @@ export EVAL_PORT="9200"
 export EVAL_HOST="127.0.0.1"
 export TEUTONIC_EVAL_SERVER="http://localhost:9200"
 
+# Devnet-sized eval params. Production defaults (batch=256, n=10000,
+# seq_len=2048) target H100/A100 with 80+ GB VRAM. Our laptop GPU is
+# 6 GB — a single fp32 logits tensor at the production batch_size is
+# ~10 GB. Shrink to fit.
+export EVAL_BATCH_SIZE="4"
+export EVAL_N="100"
+
 # Validator/eval read these too. Keep them aligned with chain.toml — the
 # fixture lives at tests/_fixtures/chain.nano_gpt.toml.
 export TEUTONIC_CHAIN_OVERRIDE="tests/_fixtures/chain.nano_gpt.toml"

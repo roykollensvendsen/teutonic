@@ -89,3 +89,22 @@ if not hasattr(bt, "wallet"):
 # under reload — a second pass sees its own wrapper and skips.
 if not hasattr(bt.Wallet, "_devnet_shimmed_wraps"):
     bt.Wallet = _wallet_with_devnet_path
+
+
+# ---------------------------------------------------------------------------
+# Transformers GPT2LMHeadModel shim.
+#
+# eval/torch_runner.py:397 and :451-452 do `model.model(input_ids)` —
+# the modern decoder-only convention used by Llama / Qwen3 / Mistral / Gemma.
+# GPT2LMHeadModel pre-dates that convention and exposes its trunk via
+# `.transformer` instead. Without this alias, eval-server raises
+# "'GPT2LMHeadModel' object has no attribute 'model'" on every challenger.
+#
+# Add `.model` as a property that returns `.transformer` so the unmodified
+# eval code works against our nano-gpt arch. Idempotent and HF-version
+# safe: hasattr guard means a future transformers release that adds
+# `.model` natively becomes a no-op.
+from transformers import GPT2LMHeadModel  # noqa: E402
+
+if not hasattr(GPT2LMHeadModel, "model"):
+    GPT2LMHeadModel.model = property(lambda self: self.transformer)
