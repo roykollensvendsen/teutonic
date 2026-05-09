@@ -151,11 +151,12 @@ def main():
     p.add_argument("--tokenizer", default="gpt2",
                    help="HF tokenizer repo. Must match nano-gpt seed king's "
                         "tokenizer (chain.toml [seed].tokenizer_repo).")
-    p.add_argument("--shard-prefix", default="playground/v2/shards/",
+    p.add_argument("--shard-prefix", default="dataset/v2/shards/",
                    help="Logical R2 key prefix recorded in the manifest. "
-                        "When uploading to a minio/R2 bucket, this is what "
-                        "the validator will GET; on disk we mirror it under "
-                        "<out>/shards/. Trailing slash matters.")
+                        "Default matches production (validator.py:2196 has "
+                        "`dataset/v2/manifest.json` hardcoded); the shards "
+                        "live under the same prefix so a vanilla validator "
+                        "GET resolves them. Trailing slash matters.")
     p.add_argument("--cache-dir", default="playground/dataset/cache",
                    help="Where to cache the downloaded tinyshakespeare text "
                         "between runs.")
