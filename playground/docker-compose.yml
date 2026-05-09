@@ -1,0 +1,44 @@
+# Local devnet services for the nano-gpt experiment.
+#
+# Phase 3a: storage. minio is an S3-compatible blob store; the validator's
+# R2 client (eval/torch_runner.R2) speaks plain boto3 against any S3 endpoint
+# so pointing it at this container is exactly equivalent to pointing it at
+# Cloudflare R2 in production — no validator-side changes.
+#
+# Phase 3b (subtensor) and 3c (HF mirror) get added as services here in
+# follow-up commits. Single docker-compose file keeps the dev loop one
+# command (`docker compose up -d` from playground/).
+#
+# Bring up:    docker compose -f playground/docker-compose.yml up -d
+# Tear down:   docker compose -f playground/docker-compose.yml down -v
+# Logs:        docker compose -f playground/docker-compose.yml logs -f minio
+# Console:     http://localhost:9101  (minioadmin / minioadmin)
+#
+# Ports are shifted from minio's defaults (9000/9001) to 9100/9101 to avoid
+# colliding with other local dev services. Keep playground/.env.devnet's
+# TEUTONIC_R2_ENDPOINT in sync.
+
+services:
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: teutonic-devnet-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      # Region "auto" matches what eval/torch_runner.R2 sets; explicit here so
+      # signature_version=s3v4 paths in the dataset client (also in R2) succeed.
+      MINIO_REGION: auto
+    ports:
+      - "9100:9000"   # S3 API
+      - "9101:9001"   # web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+
+volumes:
+  minio-data:
