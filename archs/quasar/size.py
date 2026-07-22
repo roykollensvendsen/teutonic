@@ -90,6 +90,22 @@ def count_params(model, cfg: QuasarConfig):
 
 
 def _classify(name: str) -> str:
+    """Bucket a `model.named_parameters()` path into one of 14 categories
+    used by the size-report breakdown.
+
+    Buckets: embed, lm_head, moe_experts_routed, moe_experts_shared,
+    moe_dcca, moe_router, moe_smebu_buffers, latent_memory, ffn_dense,
+    attn, norm, rope, injection, other.
+
+    First-match-wins on substring patterns. Order matters: more-specific
+    patterns are checked before more-general ones (e.g. `experts_w12`
+    routes to moe_experts_routed even if the name also contains
+    `router`; `w_down_proj` routes to moe_dcca even though `_proj`
+    would otherwise match the attn bucket).
+
+    Comparison is case-insensitive (`name.lower()`). Unmatched names
+    fall through to "other".
+    """
     n = name.lower()
     if "embed_tokens" in n:
         return "embed"

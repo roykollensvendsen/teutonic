@@ -506,7 +506,21 @@ def _cleanup_hf_cache():
 
 
 def _prune_evals():
-    """Remove old completed/failed eval records to bound memory usage."""
+    """Bound the in-memory eval-record dict via two pruning rules.
+
+    1. Age sweep — completed/failed records older than `EVAL_MAX_AGE_S`
+       are removed.
+    2. Count cap — after the age sweep, if `len(_evals)` still exceeds
+       `MAX_EVALS_KEPT`, additional finished records (oldest by
+       `created_at`) are removed to bring the total down to the cap.
+
+    The cap targets *total* `len(_evals)`, not finished-only — but only
+    finished records are eligible for cap-eviction. Active records
+    (state != completed/failed) are never pruned regardless of age or
+    cap, so if active state alone exceeds `MAX_EVALS_KEPT` the function
+    cannot meet the cap (it just drains all finished and leaves the
+    actives in place).
+    """
     try:
         now = time.time()
         to_remove = []
